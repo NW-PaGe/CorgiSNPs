@@ -1,5 +1,4 @@
-<!-- LOGO PLACEHOLDER: replace <ORG> with the GitHub org hosting the docs repo and <COMMIT-SHA> with a pinned commit from that repo -->
-[![](https://github.com/nw-page/corgisnps-docs/raw/<COMMIT-SHA>/assets/media/corgisnps_logo.png)](https://github.com/<ORG>/corgisnps-docs/blob/<COMMIT-SHA>/assets/media/corgisnps_logo.png)
+![](https://nw-page.github.io/corgisnps-docs/assets/media/corgisnps_logo.png)
 
 # CorgiSNPs: Core Genome Investigation SNPs
 
