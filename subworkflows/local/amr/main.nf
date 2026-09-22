@@ -109,8 +109,8 @@ workflow AMR {
             .map  { meta, ref, direct -> [ meta, ref ] }
             .join ( ch_bam.map { meta, bam, bai -> [ meta, bam ] } )
             .map  { meta, ref, bam ->
-                [ meta + [ amr_ref: refKey(ref) ], bam, meta.reference, ref.reference, ref.annotation ]
-            }
+                [ meta + [ amr_ref: refKey(ref) ], bam, meta.reference, ref.reference, ref.annotation, ReferenceManifest.amrGenes(ref) ]
+        }
     )
     ch_versions = ch_versions.mix(EXTRACT_REGIONS.out.versions.first())
 

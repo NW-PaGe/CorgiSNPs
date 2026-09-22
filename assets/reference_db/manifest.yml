@@ -30,6 +30,9 @@
 #                             regions: [ { name, coords: [start, end] }, ... ]
 #                           Requires `annotation`. Samples on this subtype are annotated
 #                           with a snpEff database built from its assembly and annotation.
+#                           Each target's `gene` must match a gene name in `annotation`;
+#                           on the primary subtype these genes are also the regions
+#                           extracted for samples on subtypes without `amr`.
 #   primary       optional  true for the subtype whose AMR targets are used for samples on
 #                           subtypes without `amr`. Only needed when more than one subtype
 #                           has `amr`; a single `amr` subtype is primary automatically.

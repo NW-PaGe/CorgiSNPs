@@ -1,5 +1,35 @@
 reports:
-  multiqc_report.html:
+  # ---------------------------------------------------------------
+  # Run-level reports
+  # ---------------------------------------------------------------
+  "**/CorgiSNPs-summary.csv":
+    display: "CorgiSNPs run summary"
+  "**/multiqc/multiqc_report.html":
     display: "MultiQC HTML report"
-  samplesheet.csv:
-    display: "Auto-created samplesheet with collated metadata and FASTQ paths"
+
+  # ---------------------------------------------------------------
+  # Per-sample reports
+  # ---------------------------------------------------------------
+  "**/sample/*/*_summary.csv":
+    display: "Sample summary"
+  "**/sample/*/classify/*_gambit.csv":
+    display: "GAMBIT species classification"
+  "**/sample/*/classify/*_subtype.csv":
+    display: "Subtype / clade assignment"
+  "**/sample/*/amr/*.amr-full.csv":
+    display: "AMR mutations (full)"
+  "**/sample/*/variants/lowsites/lowsites.csv":
+    display: "Low-coverage sites"
+
+  # ---------------------------------------------------------------
+  # Species / clade-level reports
+  # ---------------------------------------------------------------
+  "**/species/*/*/summary/*_summary.csv":
+    display: "Clade summary"
+  "**/species/*/*/dist/*_dist.csv":
+    display: "Pairwise SNP distance matrix"
+  "**/species/*/*/qc/*_cg-plot.html":
+    display: "Core genome QC plot"
+  "**/species/*/*/tree/*.nwk":
+    display: "Phylogenetic tree (Newick)"
+    mimeType: "text/plain"

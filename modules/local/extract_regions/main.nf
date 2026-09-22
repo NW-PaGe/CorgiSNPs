@@ -3,7 +3,7 @@ process EXTRACT_REGIONS {
     label 'process_high'
 
     input:
-    tuple val(meta), path(bam), path(ref), path(genome), path(genes)
+    tuple val(meta), path(bam), path(ref), path(genome), path(gff), val(genes)
 
     output:
     tuple val(meta), path("*.fastq.gz"), path("genome_masked.fasta.gz"), emit: results
@@ -14,14 +14,15 @@ process EXTRACT_REGIONS {
 
     script:
     def args = task.ext.args ?: ''
+    def gene_args = genes.collect { g -> "'${g}'" }.join(' ')
     tool = 'coordcutter'
     """
     ${tool} \\
         --bam ${bam} \\
         --ref ${ref} \\
         --genome ${genome} \\
-        --gff ${genes} \\
-        --genes "${params.amr_genes}"
+        --gff ${gff} \\
+        --genes ${gene_args}
 
     gzip genome_masked.fasta
     

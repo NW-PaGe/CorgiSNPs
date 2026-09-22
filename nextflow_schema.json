@@ -10,10 +10,7 @@
             "type": "object",
             "fa_icon": "fas fa-terminal",
             "description": "Define where the pipeline should find input data and save output data.",
-            "required": [
-                "input",
-                "outdir"
-            ],
+            "required": ["input", "outdir"],
             "properties": {
                 "input": {
                     "type": "string",
@@ -244,19 +241,6 @@
                 }
             }
         },
-        "amr_options": {
-            "title": "AMR options",
-            "type": "object",
-            "fa_icon": "fas fa-shield-virus",
-            "description": "Targets and parameters for AMR detection.",
-            "properties": {
-                "amr_genes": {
-                    "type": "string",
-                    "default": "FKS1",
-                    "description": "Comma-separated list of AMR target genes"
-                }
-            }
-        },
         "phylo_options": {
             "title": "Phylogenetic parameters",
             "type": "object",
@@ -357,14 +341,7 @@
                     "description": "Publish method for results (symlink|rellink|link|copy|copyNoFollow|move).",
                     "help_text": "The Nextflow `publishDir` option specifies which intermediate files should be saved to the output directory. This option tells the pipeline what method should be used to move these files. See Nextflow docs for details.",
                     "fa_icon": "fas fa-copy",
-                    "enum": [
-                        "symlink",
-                        "rellink",
-                        "link",
-                        "copy",
-                        "copyNoFollow",
-                        "move"
-                    ],
+                    "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
                     "hidden": true
                 },
                 "email_on_fail": {
@@ -464,9 +441,6 @@
         },
         {
             "$ref": "#/$defs/variant_calling_parameters"
-        },
-        {
-            "$ref": "#/$defs/amr_options"
         },
         {
             "$ref": "#/$defs/phylo_options"

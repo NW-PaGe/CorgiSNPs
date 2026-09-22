@@ -153,6 +153,13 @@ class ReferenceManifest {
                 withAmr.findAll { r -> !r.annotation }.each { r ->
                     errors << "${label}, subtype '${r.subtype[0]}': 'amr' requires an 'annotation'"
                 }
+                withAmr.each { r ->
+                    def targets = r.amr instanceof List ? r.amr : [ r.amr ]
+                    targets.eachWithIndex { t, n ->
+                        if( !(t instanceof Map) || !t.gene?.toString()?.trim() )
+                            errors << "${label}, subtype '${r.subtype[0]}': amr target ${n + 1} must set 'gene'"
+                    }
+                }
                 if( flagged.size() > 1 )
                     errors << "${label}: only one subtype can be primary, found ${flagged.collect { r -> r.subtype[0] }.join(', ')}"
                 else if( flagged && !hasAmr(flagged[0]) )
@@ -181,6 +188,17 @@ class ReferenceManifest {
     static boolean hasAmr(Map record) {
         def amr = record.amr
         return amr instanceof Collection ? !amr.isEmpty() : amr != null
+    }
+
+    static List<String> amrGenes(Map record) {
+        if( !hasAmr(record) )
+            return []
+        def targets = record.amr instanceof List ? record.amr : [ record.amr ]
+        return targets
+            .findAll { t -> t instanceof Map }
+            .collect { t -> t.gene?.toString()?.trim() }
+            .findAll { g -> g }
+            .unique()
     }
 
     static boolean isTrue(value) {
