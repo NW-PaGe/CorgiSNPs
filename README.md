@@ -1,55 +1,28 @@
-<p align="center">
-<img src="docs/images/CorgiSNPs_logo.png" width="600px" >
-</p>
+<!-- LOGO PLACEHOLDER: replace <ORG> with the GitHub org hosting the docs repo and <COMMIT-SHA> with a pinned commit from that repo -->
+[![](https://github.com/nw-page/corgisnps-docs/raw/<COMMIT-SHA>/assets/media/corgisnps_logo.png)](https://github.com/<ORG>/corgisnps-docs/blob/<COMMIT-SHA>/assets/media/corgisnps_logo.png)
 
 # CorgiSNPs: Core Genome Investigation SNPs
+
 ## Key Features
+
 CorgiSNPs is a fungal core-genome SNP pipeline that can:
 
-🧬 Detect SNPs from fungal whole-genome sequencing data \
-🧬 Handle organisms with up to 3 genome copies (haploid to triploid) \
-🧬 Generate phylogenies and pairwise distance matrices \
-🧬 Provide sample- and cluster-level summaries suitable for downstream visualization \
-🧬 Export results in standard formats (VCF, FASTA, Newick, CSV, Microreact)
+<div style="padding: 1em; margin: 1em 0;">
 
-CorgiSNPs is designed for public health fungal genomics (currently only tested with *Candidozyma auris* (*Candida auris*)). It builds on the foundation of MycoSNP but improves workflow automation, handling of higher ploidy organisms, and phylogenetic interpretation.
+🧬 <strong>Fungal SNP detection</strong> - calls SNPs directly from fungal whole-genome sequencing data using a reference-based workflow<br>
+🧬 <strong>Flexible ploidy</strong> - handles organisms with up to three genome copies, from haploid through triploid<br>
+🧬 <strong>Phylogenetics and distances</strong> - builds core SNP phylogenies and pairwise distance matrices in a single pass<br>
+🧬 <strong>Layered summaries</strong> - reports at both the sample and cluster level, ready for downstream visualization<br>
+🧬 <strong>Standard outputs</strong> - exports results as VCF, FASTA, Newick, CSV, and Microreact files<br>
+
+</div>
+
+CorgiSNPs is built for **public health fungal genomics** and is currently tested with *Candidozyma auris* (*Candida auris*). It builds on the foundation of [MycoSNP](https://github.com/CDCgov/mycosnp-nf) but improves **workflow automation, higher-ploidy handling, and phylogenetic interpretation**, and adds de novo assembly, speciation, subtyping, and antifungal resistance marker detection alongside variant calling.
 
 ## Pipeline Overview
-- **Prepare** – Prepare inputs (read QC, etc.,)
-- **Classify** – De novo assembly, speciation, and subtyping
-- **Variants** – Reference-based variant calling
-- **AMR** – Detection of antifungal resistance markers
-- **Phylo** – Core SNP phylogenetics and distance metrics
-- **Report** – Interactive and static summaries
 
-## More Information
+![](https://nw-page.github.io/corgisnps-docs/docs/v1.0/media/corgisnps-v1.0.png)
 
-See the documentation
- for usage and setup details. (coming soon!)
+## More Information:
 
-## Basic Usage
-### Step 1 - Create your samplesheet
-`samplesheet.csv`:
-```
-sample,fastq_1,fastq_2
-sample01,sample01_R1.fastq,sample01_R2.fastq
-```
-### Step 2 - Run CorgiSNPs
-```
-nextflow run DOH-JDJ0303/CorgiSNPs \
-    -r main \
-    -profile docker \
-    --input samplesheet.csv \
-    --outdir results/ \
-    --db db/ \
-    --push true
-```
-
-## Acknowledgements
-
-CorgiSNPs would not be possible without the contributions of:
-- Washington State Department of Health – Public Health Laboratories
-- Collaborators at CDC Mycotics Branch
-- nf-core and the broader Nextflow community
-
-CorgiSNPs was originally written by Jared Johnson for fungal pathogen surveillance at the Washington State Department of Health.
+See the [docs](https://nw-page.github.io/corgisnps-docs/) for more information.
