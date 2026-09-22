@@ -79,10 +79,17 @@ workflow PREPARE {
     // MODULE: Downsample reads with seqtk sample (if --max_reads provided)
     // -------------------------------------------------------------------------
     if (params.max_reads) {
-
-        // Compute total read count (approx) by counting first R1 and doubling (paired)
         ch_samplesheet
-            .map { it -> [it, it.reads[0].countFastq() * (it.meta.single_end ? 1 : 2) ] }
+            .map { it ->
+                def read_count
+                try {
+                    read_count = it.reads[0].countFastq() * 2
+                } catch (Exception e) {
+                    log.warn "${it.meta.id}: Failed to count reads - will attempt downsampling anyway!"
+                    read_count = params.max_reads + 1
+                }
+                [it, read_count]
+            }
             .branch { it, n ->
                 ok  : n <= params.max_reads
                 high: n >  params.max_reads
