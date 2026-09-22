@@ -87,9 +87,9 @@
             - name: HS3
               coords: [221805, 221807]
     - subtype: [Clade II]
-      assembly: GCA_003013715.2.fna.gz
+      assembly: GCF_003013715.1.fna.gz
     - subtype: [Clade III]
-      assembly: GCA_002775015.1.fna.gz
+      assembly: GCF_002775015.1.fna.gz
     - subtype: [Clade IV]
       assembly: GCA_003014415.1.fna.gz
     - subtype: [Clade V]
