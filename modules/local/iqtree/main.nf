@@ -19,8 +19,8 @@ process IQTREE {
     bootstrap    = uniq_seq > 4 ? '-B 1000' : ''
     tree_ext     = uniq_seq > 4 ? 'contree' : 'treefile'
     """
-    # run IQTREE2
-    iqtree2 \\
+    # run IQTREE3
+    iqtree3 \\
         -s ${aln} \\
         -fconst \$(cat ${const_sites}) \\
         -T ${task.cpus} \\

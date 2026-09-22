@@ -1,7 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://raw.githubusercontent.com/DOH-JDJ0303/CorgiSNPs/master/nextflow_schema.json",
-    "title": "DOH-JDJ0303/CorgiSNPs pipeline parameters",
+    "$id": "https://raw.githubusercontent.com/NW-PaGe/CorgiSNPs/master/nextflow_schema.json",
+    "title": "NW-PaGe/CorgiSNPs pipeline parameters",
     "description": "Fungal variant calling workflow.",
     "type": "object",
     "$defs": {
@@ -34,13 +34,20 @@
                 },
                 "db": {
                     "type": "string",
-                    "description": "Path to surviellance database",
+                    "description": "Path to surveillance database",
                     "fa_icon": "fas fa-database"
+                },
+                "push": {
+                    "type": "boolean",
+                    "description": "Push outputs to database",
+                    "fa_icon": "fas fa-upload"
                 },
                 "microreact_template": {
                     "type": "string",
+                    "format": "file-path",
                     "default": "{projectDir}/assets/template.microreact",
-                    "description": "Microreact template JSON for visualization."
+                    "description": "Microreact template JSON for visualization",
+                    "fa_icon": "fas fa-file-code"
                 },
                 "email": {
                     "type": "string",
@@ -67,110 +74,35 @@
                 "classify": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable/disable classification."
+                    "description": "Enable/disable classification"
                 },
                 "variants": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable/disable variant calling."
+                    "description": "Enable/disable variant calling"
                 },
                 "amr": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable/disable AMR detection."
+                    "description": "Enable/disable antimicrobial resistance (AMR) detection"
                 },
                 "phylo": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable/disable phylogenetic tree building."
-                },
-                "push": {
-                    "type": "boolean",
-                    "description": "Push outputs (e.g., to remote storage/registry)."
+                    "description": "Enable/disable phylogenetic tree building"
                 }
             }
         },
-        "assembly_pre_processing": {
-            "title": "Assembly / Pre-processing",
+        "quality_control_options": {
+            "title": "Automated quality control",
             "type": "object",
-            "fa_icon": "fas fa-gears",
-            "description": "Assembler choice and basic contig filters.",
-            "properties": {
-                "assembler": {
-                    "type": "string",
-                    "default": "skesa",
-                    "description": "Assembler to use (e.g., skesa, shovill)."
-                },
-                "shovill_depth": {
-                    "type": "integer",
-                    "default": 70,
-                    "description": "Target depth for shovill downsampling."
-                },
-                "genome_size": {
-                    "type": "integer",
-                    "default": 0,
-                    "description": "Expected genome size (bp). For autodetect use 0."
-                },
-                "min_contig_cov": {
-                    "type": "integer",
-                    "default": 10,
-                    "description": "Minimum contig coverage to retain."
-                },
-                "min_contig_len": {
-                    "type": "integer",
-                    "default": 300,
-                    "description": "Minimum contig length to retain (bp)."
-                }
-            }
-        },
-        "databases": {
-            "title": "Databases",
-            "type": "object",
-            "fa_icon": "fas fa-database",
-            "description": "Paths to required DBs/resources.",
-            "properties": {
-                "gambit_db": {
-                    "type": "string",
-                    "default": "{projectDir}/assets/gambit_db/gambit-fungal-metadata-1.0.0-20241213.gdb",
-                    "description": "Path to Gambit fungal metadata DB."
-                },
-                "gambit_h5_dir": {
-                    "type": "string",
-                    "default": "{projectDir}/assets/gambit_db/signatures/",
-                    "description": "Directory of Gambit signatures (HDF5)."
-                },
-                "subtype_db": {
-                    "type": "string",
-                    "default": "{projectDir}/assets/subtyper_db/",
-                    "description": "Directory of subtyping signatures (Sourmash DB)."
-                },
-                "reference_db": {
-                    "type": "string",
-                    "default": "{projectDir}/assets/reference_db/manifest.json",
-                    "description": "Reference genome manifest JSON."
-                },
-                "snpeff_db": {
-                    "type": "string",
-                    "default": "{projectDir}/assets/snpeff_db",
-                    "description": "SnpEff database directory for variant annotation."
-                },
-                "ncbi_stats": {
-                    "type": "string",
-                    "default": "{projectDir}/assets/ncbi_stats/2026-02-10_ncbi-fungal-sp.json",
-                    "description": "Genome statistics for fungal species hosted on NCBI"
-                }
-            }
-        },
-        "new_group_1": {
-            "title": "New Group 1",
-            "type": "object",
-            "description": "Quality control performed prior to variant caling",
-            "default": "",
+            "fa_icon": "fas fa-clipboard-check",
+            "description": "Quality control performed prior to variant calling.",
             "properties": {
                 "ignore_qc": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Ignore automated quality control results. Caution: This will allow low quality samples to pass to the variant calling steps."
+                    "description": "Ignore automated QC results. Caution: this allows low quality samples to pass to variant calling."
                 },
                 "min_depth_qc": {
                     "type": "integer",
@@ -189,56 +121,126 @@
                 }
             }
         },
+        "assembly_pre_processing": {
+            "title": "Assembly / Pre-processing",
+            "type": "object",
+            "fa_icon": "fas fa-gears",
+            "description": "Assembler choice and basic contig filters.",
+            "properties": {
+                "assembler": {
+                    "type": "string",
+                    "default": "skesa",
+                    "description": "Assembler to use (e.g., skesa, shovill)"
+                },
+                "shovill_depth": {
+                    "type": "integer",
+                    "default": 70,
+                    "description": "Target depth for shovill downsampling"
+                },
+                "genome_size": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Expected genome size (bp). Use 0 to autodetect"
+                },
+                "min_contig_cov": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Min. contig coverage to retain"
+                },
+                "min_contig_len": {
+                    "type": "integer",
+                    "default": 300,
+                    "description": "Min. contig length to retain (bp)"
+                }
+            }
+        },
+        "databases": {
+            "title": "Databases",
+            "type": "object",
+            "fa_icon": "fas fa-database",
+            "description": "Paths to required databases and resources.",
+            "properties": {
+                "gambit_db": {
+                    "type": "string",
+                    "format": "file-path",
+                    "default": "{projectDir}/assets/gambit_db/gambit-fungal-metadata-1.0.0-20241213.gdb",
+                    "description": "Gambit fungal metadata DB"
+                },
+                "gambit_h5_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "default": "{projectDir}/assets/gambit_db/signatures/",
+                    "description": "Gambit signatures (HDF5 format)"
+                },
+                "ncbi_stats": {
+                    "type": "string",
+                    "format": "file-path",
+                    "default": "{projectDir}/assets/ncbi_stats/2026-02-10_ncbi-fungal-sp.json",
+                    "description": "Genome statistics for fungal species hosted on NCBI"
+                },
+                "reference_db": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "default": "{projectDir}/assets/reference_db/",
+                    "description": "Reference genome database"
+                },
+                "validate_refs": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Validate the reference database"
+                }
+            }
+        },
         "variant_calling_parameters": {
             "title": "Variant calling parameters",
             "type": "object",
             "fa_icon": "fas fa-dna",
-            "description": "Depth, quality, and bias thresholds used for calls/consensus.",
+            "description": "Depth, quality, and bias thresholds used for variant calls.",
             "properties": {
                 "max_reads": {
                     "type": "integer",
                     "default": 10000000,
-                    "description": "Maximum reads to process (subsampling)"
+                    "description": "Max. reads to process (subsampling)"
                 },
                 "limit_coverage": {
                     "type": "integer",
                     "default": 100,
-                    "description": "Maximum allowed site coverage (reads/site)."
+                    "description": "Max. allowed site coverage (to avoid bias)"
                 },
                 "min_base_depth": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Minimum read depth (per allele/site)."
+                    "description": "Min. read depth per allele/site"
                 },
                 "min_base_quality": {
                     "type": "integer",
                     "default": 30,
-                    "description": "Minimum mean base quality (Phred) per allele/site."
+                    "description": "Min. mean base quality (Phred) per allele/site"
                 },
                 "min_mapping_quality": {
                     "type": "integer",
                     "default": 40,
-                    "description": "Minimum mean mapping quality (Phred) per allele."
+                    "description": "Min. mean mapping quality (Phred) per allele"
                 },
                 "min_allele_fraction": {
                     "type": "number",
                     "default": 0.8,
-                    "description": "Minimum fraction of reads supporting an allele (e.g., haploid 0.8; diploid/triploid 0.25)."
+                    "description": "Min. fraction of reads supporting an allele (haploid: 0.8, diploid/triploid: 0.25)"
                 },
                 "min_fwd_strand_fraction": {
                     "type": "number",
                     "default": 0.3,
-                    "description": "Minimum forward-strand fraction for strand balance."
+                    "description": "Min. forward-strand fraction for strand balance"
                 },
                 "max_strand_bias": {
                     "type": "integer",
                     "default": 15,
-                    "description": "Maximum strand-bias score (per allele)."
+                    "description": "Max. strand bias score"
                 },
                 "max_read_pos_bias": {
                     "type": "integer",
                     "default": 30,
-                    "description": "Maximum read-position-bias score (per allele)."
+                    "description": "Max. read position bias score"
                 }
             }
         },
@@ -251,40 +253,40 @@
                 "amr_genes": {
                     "type": "string",
                     "default": "FKS1",
-                    "description": "Comma separated list of AMR target genes."
+                    "description": "Comma-separated list of AMR target genes"
                 }
             }
         },
         "phylo_options": {
-            "title": "Phylogenetic Paramaters",
+            "title": "Phylogenetic parameters",
             "type": "object",
             "fa_icon": "fas fa-project-diagram",
-            "description": "Paramaters for phylogenetic analysis analsysis.",
+            "description": "Parameters for phylogenetic analysis.",
             "properties": {
                 "min_genome_fraction": {
                     "type": "number",
                     "default": 0.9,
-                    "description": "Min. genome fraction for a sample to be included in the core analysis."
+                    "description": "Min. genome fraction for a sample to be included in the core analysis"
                 },
                 "min_core_fraction": {
                     "type": "number",
                     "default": 0.9,
-                    "description": "Min. population fraction for a site to be included in the core analysis."
+                    "description": "Min. population fraction for a site to be included in the core analysis"
                 },
                 "strong_link_threshold": {
                     "type": "integer",
                     "default": 5,
-                    "description": "Threshold for defining strong links between nodes."
+                    "description": "Threshold for defining strong links between samples"
                 },
                 "inter_link_threshold": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Threshold for defining intermediate links between nodes."
+                    "description": "Threshold for defining intermediate links between samples"
                 },
                 "partition_distance": {
                     "type": "integer",
                     "default": 25,
-                    "description": "Maximum distance for partitioning clusters."
+                    "description": "Max. distance for partitioning clusters"
                 }
             }
         },
@@ -409,14 +411,17 @@
                 },
                 "multiqc_logo": {
                     "type": "string",
+                    "format": "file-path",
                     "description": "Custom logo file for MultiQC (also set in MultiQC config).",
                     "fa_icon": "fas fa-image",
                     "hidden": true
                 },
                 "multiqc_methods_description": {
                     "type": "string",
+                    "format": "file-path",
                     "description": "Custom MultiQC YAML with HTML methods description.",
-                    "fa_icon": "fas fa-cog"
+                    "fa_icon": "fas fa-cog",
+                    "hidden": true
                 },
                 "validate_params": {
                     "type": "boolean",
@@ -434,7 +439,7 @@
                 },
                 "trace_report_suffix": {
                     "type": "string",
-                    "fa_icon": "far calendar",
+                    "fa_icon": "far fa-calendar",
                     "description": "Suffix for trace report filename (default: yyyy-MM-dd_HH-mm-ss).",
                     "hidden": true
                 }
@@ -449,13 +454,13 @@
             "$ref": "#/$defs/workflow_toggles"
         },
         {
+            "$ref": "#/$defs/quality_control_options"
+        },
+        {
             "$ref": "#/$defs/assembly_pre_processing"
         },
         {
             "$ref": "#/$defs/databases"
-        },
-        {
-            "$ref": "#/$defs/new_group_1"
         },
         {
             "$ref": "#/$defs/variant_calling_parameters"

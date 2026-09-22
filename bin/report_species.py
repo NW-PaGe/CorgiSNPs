@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
+import re
 import json
 import csv
+import gzip
 import argparse
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TextIO
 from Bio import Phylo
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -27,21 +29,57 @@ def _attach_text_file(mr: Dict[str, Any], slot: str, path: Path, outname: str) -
     mr['files'][slot]['name'] = outname
 
 # ----------------------------
+# Naming helpers
+# ----------------------------
+
+def make_prefix(species: str, subtype: str) -> str:
+    """
+    Build the file prefix from species and subtype: joined with a dash,
+    lowercased, and every whitespace character replaced by an underscore.
+    e.g. ("Escherichia coli", "ST 131") -> "escherichia_coli-st_131"
+    """
+    joined = f"{species.strip()}-{subtype.strip()}".lower()
+    return re.sub(r'\s', '_', joined)
+
+def make_meta_name(species: str, subtype: str, date: str) -> str:
+    """Microreact project name: '<species> <subtype> (<date>)'."""
+    return f"{species.strip()} {subtype.strip()} ({date})"
+
+# ----------------------------
 # File helpers
 # ----------------------------
 
+def open_text(path: str) -> TextIO:
+    """
+    Open a file for reading as text. Gzipped files are decompressed on the
+    fly; they are detected by their content, so the '.gz' extension is not
+    required.
+    """
+    with open(path, 'rb') as f:
+        is_gzip = f.read(2) == b'\x1f\x8b'
+    if is_gzip:
+        return gzip.open(path, 'rt', encoding='utf-8', newline='')
+    return open(path, 'r', encoding='utf-8', newline='')
+
+def detect_sep(path: str) -> str:
+    """Tab for .tsv / .tsv.gz files, comma otherwise."""
+    name = path.lower()
+    if name.endswith('.gz'):
+        name = name[:-3]
+    return '\t' if name.endswith('.tsv') else ','
+
 def load_json(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
+    with open_text(path) as f:
         return json.load(f)
 
 def load_csv(path: str, sep: str = ',') -> List[Dict[str, str]]:
-    with open(path, newline="", encoding="utf-8") as f:
+    with open_text(path) as f:
         return list(csv.DictReader(f, delimiter=sep))
 
 def load_dist(path: str, out_matrix: str = 'matrix.csv'):
     rowids, colids, mr_out = [], None, []
     M = None
-    with open(path, 'r', encoding='utf-8') as f:
+    with open_text(path) as f:
         for rn, line in enumerate(f):
             line = line.strip()
             if not line:
@@ -124,16 +162,16 @@ def reference_row(stats: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
 # ----------------------------
 
 def main():
-    VERSION = "1.2"
+    VERSION = "1.4"
 
-    parser = argparse.ArgumentParser(description="Summarize outputs from various workflows")
-    parser.add_argument("--prefix", required=True, help="Prefix to use for file naming.")
+    parser = argparse.ArgumentParser(description="Summarize outputs from various workflows. All inputs may be gzipped.")
+    parser.add_argument("--species", required=True, help="Species name (e.g. 'Escherichia coli').")
+    parser.add_argument("--subtype", required=True, help="Subtype (e.g. 'ST131').")
     parser.add_argument("--aln_stats", required=True, help="Core alignment stats from PolyCore.")
     parser.add_argument("--summary", required=True, help="Combined summary file. May contain more than what is in core alignment.")
     parser.add_argument("--tree")
     parser.add_argument("--dist")
     parser.add_argument("--microreact")
-    parser.add_argument("--epoch", type=int, help="Unix epoch for Microreact filename prefix (shared across a run).")
     parser.add_argument("--partition_distance", default=100, type=float)
     parser.add_argument("--strong_link", default=5, type=float)
     parser.add_argument("--inter_link", default=10, type=float)
@@ -151,15 +189,18 @@ def main():
     )
     logging.info("Starting")
 
+    # Single run time, used for both the meta name date and the timestamp
+    run_time = datetime.now(timezone.utc)
+
     # Accumulators
     data: Dict[str, Dict[str, Any]] = {}
     stats_dict: Dict[str, Dict[str, Any]] = {}
     tree_samples: set = set()
 
-    # Output file names derived from the prefix. These are the same names the
-    # files are given inside the Microreact bundle, so the on-disk outputs now
-    # match the Microreact attachment names.
-    prefix = args.prefix or "project"
+    # Output file names derived from species and subtype. These are the same
+    # names the files are given inside the Microreact bundle.
+    prefix = make_prefix(args.species, args.subtype)
+    logging.info("Using prefix '%s'", prefix)
     summary_out_file = f"{prefix}_summary.csv"
     matrix_out_file = f"{prefix}_dist.csv"
     tree_out_file = f"{prefix}.nwk"
@@ -167,8 +208,7 @@ def main():
     # ----------------------------
     # Alignment stats
     # ----------------------------
-    sep = '\t' if args.aln_stats.lower().endswith('.tsv') else ','
-    stats_dict = list2map(load_csv(args.aln_stats, sep), key='name')
+    stats_dict = list2map(load_csv(args.aln_stats, detect_sep(args.aln_stats)), key='name')
     if stats_dict:
         extend_dict(data, stats_dict)
     logging.info("Loaded alignment stats (%d rows)", len(stats_dict))
@@ -188,7 +228,8 @@ def main():
     # Tree (optional)
     # ----------------------------
     if args.tree:
-        tree = Phylo.read(args.tree, 'newick')
+        with open_text(args.tree) as f:
+            tree = Phylo.read(f, 'newick')
         tree.root_at_midpoint()
 
         # Attempt to scale by reference length if present
@@ -224,8 +265,7 @@ def main():
     # ----------------------------
     original_fieldnames: List[str] = []
     samplesheet_ids: set = set()
-    sep = '\t' if args.summary.lower().endswith('.tsv') else ','
-    summary_rows = load_csv(args.summary, sep)
+    summary_rows = load_csv(args.summary, detect_sep(args.summary))
     if summary_rows:
         original_fieldnames = list(summary_rows[0].keys())
         samplesheet_ids = {r.get('sample', '') for r in summary_rows}
@@ -262,7 +302,7 @@ def main():
                 if k in ('sample', 'status'):
                     continue
                 if v != sample_id:  # avoid duplicating id if present as a value
-                    rec[k] = ';'.join(map(str, v)) if isinstance(v, list) else v
+                    rec[k] = ':'.join(map(str, v)) if isinstance(v, list) else v
 
                     # Track columns that are NEW (not from the original summary header)
                     if (k not in original_fieldnames) and (k not in created_seen):
@@ -317,9 +357,11 @@ def main():
             _attach_text_file(mr_json, "dist_file", Path(matrix_out_file), matrix_out_file)
 
         # Meta
-        mr_json['meta']['name'] = prefix
+        mr_json['meta']['name'] = make_meta_name(
+            args.species, args.subtype, run_time.date().isoformat()
+        )
         mr_json['meta']['timestamp'] = (
-            datetime.now(timezone.utc)
+            run_time
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
@@ -331,8 +373,7 @@ def main():
             if header:
                 mr_json['tables']['table-1']['columns'] = [{"field": h, "fixed": False} for h in header]
 
-        epoch = args.epoch if args.epoch is not None else int(datetime.now(timezone.utc).timestamp())
-        out_path = f"{epoch}-{prefix}.microreact"
+        out_path = f"{prefix}.microreact"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(mr_json, f, indent=2, ensure_ascii=False)
         logging.info("Wrote %s", out_path)

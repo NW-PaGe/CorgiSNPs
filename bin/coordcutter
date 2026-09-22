@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import subprocess
+import gzip
 from typing import Dict, List, Tuple
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -63,6 +64,14 @@ def file_size(path: str) -> str:
         n /= 1024
     return path
 
+def open_text(path: str):
+    """Open a plain or gzip/bgzip-compressed file for text reading."""
+    with open(path, "rb") as fh:
+        magic = fh.read(2)
+    if magic == b"\x1f\x8b":
+        return gzip.open(path, "rt", encoding="utf-8")
+    return open(path, "r", encoding="utf-8")
+
 
 # ---------------------------
 # Core logic
@@ -74,7 +83,7 @@ def parse_gff_gene_spans(gff: str, targets: List[str], flank: int) -> Dict[str, 
     """
     targets_set = set(targets)
     spans: Dict[str, Dict] = {}  # gene -> {contig,strand,starts,ends}
-    with open(gff, "r") as fh:
+    with open_text(gff) as fh:
         for ln in fh:
             if not ln or ln.startswith("#"):
                 continue
@@ -108,10 +117,11 @@ def parse_gff_gene_spans(gff: str, targets: List[str], flank: int) -> Dict[str, 
 
 
 def load_genome_dict(fasta: str) -> Dict[str, Seq]:
-    """Load genome sequences into a dict keyed by both full id and first token."""
+    """Load genome sequences (plain or gzipped FASTA) into a dict keyed by record id."""
     d: Dict[str, Seq] = {}
-    for rec in SeqIO.parse(fasta, "fasta"):
-        d[rec.id] = rec.seq
+    with open_text(fasta) as fh:
+        for rec in SeqIO.parse(fh, "fasta"):
+            d[rec.id] = rec.seq
     LOG.info("Loaded %d sequence keys from genome", len(d))
     return d
 
@@ -274,7 +284,7 @@ def extract_reads(bam: str, bed: str, outdir: str, threads: int) -> Tuple[str, s
 # CLI
 # ---------------------------
 def main() -> None:
-    VERSION = "1.1"
+    VERSION = "1.2"
     ap = argparse.ArgumentParser(
         description="Extract target gene regions, align to reference, and pull reads from BAM."
     )

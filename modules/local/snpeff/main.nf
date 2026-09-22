@@ -2,14 +2,13 @@ process SNPEFF {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'staphb/snpeff:5.2f'
-
     input:
-    tuple val(meta), path(vcf), path(tbi)
-    path snpeff_db, stageAs: 'snpEff'
+    // db: snpeff_db.tar.gz from SNPEFF_BUILD
+    tuple val(meta), path(vcf), path(db)
 
     output:
     tuple val(meta), path("*.ann.vcf"), emit: vcf
+    tuple val(meta), path("*.csv")    , emit: report
     path "versions.yml"               , emit: versions
 
     when:
@@ -25,13 +24,19 @@ process SNPEFF {
     }
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
+    tar -xzf ${db}
+
+    # genome ID is the '<id>.genome : <name>' entry in the database's config
+    genome=\$(sed -nE 's/^([^ ]+)\\.genome *:.*/\\1/p' snpeff_db/snpEff.config | head -n 1)
+
     snpEff \\
         -Xmx${avail_mem}M \\
-        ${meta.species} \\
-        -c "${snpeff_db}/snpEff.config" \\
+        \$genome \\
+        -c snpeff_db/snpEff.config \\
+        -dataDir \$PWD/snpeff_db/data \\
         -csvStats ${prefix}.csv \\
-        $args \\
-        $vcf \\
+        ${args} \\
+        ${vcf} \\
         > ${prefix}.ann.vcf
 
     cat <<-END_VERSIONS > versions.yml
@@ -45,13 +50,10 @@ process SNPEFF {
     """
     touch ${prefix}.ann.vcf
     touch ${prefix}.csv
-    touch ${prefix}.html
-    touch ${prefix}.genes.txt
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         snpeff: \$(echo \$(snpEff -version 2>&1) | cut -f 2 -d ' ')
     END_VERSIONS
     """
-
 }

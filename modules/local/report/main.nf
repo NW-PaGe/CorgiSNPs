@@ -106,10 +106,10 @@ process REPORT_SPECIES {
     prefix = "${meta.species}-${meta.subtype}"
     tool = 'report_species.py'
     def tree_arg = tree ? "--tree \"${tree}\"" : ''
-    def epoch = workflow.start.toInstant().epochSecond
     """
     ${tool} \\
-        --prefix ${prefix} \\
+        --species "${meta.species}" \\
+        --subtype "${meta.subtype}" \\
         --aln_stats "${aln_stats}" \\
         --dist "${dist}" \\
         --summary ${summary} \\
@@ -117,8 +117,7 @@ process REPORT_SPECIES {
         --strong_link ${params.strong_link_threshold} \\
         --inter_link ${params.inter_link_threshold} \\
         --partition_distance ${params.partition_distance} \\
-        --microreact "${microreact_template}" \\
-        --epoch ${epoch}
+        --microreact "${microreact_template}"
 
     # version info
     cat <<-END_VERSIONS > versions.yml

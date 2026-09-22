@@ -17,7 +17,7 @@
                         "size": "Large",
                         "weight": "Bolder",
                         "color": "<% if (success) { %>Good<% } else { %>Attention<%} %>",
-                        "text": "DOH-JDJ0303/CorgiSNPs v${version} - ${runName}",
+                        "text": "NW-PaGe/CorgiSNPs v${version} - ${runName}",
                         "wrap": true
                     },
                     {

@@ -281,14 +281,17 @@ def perform_auto_qc(
         # Compare against threshold
         try:
             operator, threshold = criterion
-            
+            label = field
+
             # For z-scores, check absolute value
             if field.endswith('_z'):
                 value = abs(value)
-            
+                label = f"|{field}|"
+
             if not compare_values(value, operator, threshold):
                 qc_status = 'FAIL'
-                qc_fail.append(f"{field} {operator} {threshold}")
+                observed = round(value, 2) if isinstance(value, float) else value
+                qc_fail.append(f"{label} = {observed} (required {operator} {threshold})")
         except Exception as e:
             qc_status = 'FAIL'
             qc_error.append(field)

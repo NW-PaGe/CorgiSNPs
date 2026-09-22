@@ -1,3 +1,0 @@
-taxon,signature_filepath,distance_threshold
-Candida auris,signatures/candida_auris_clades.sig,99.7
-Candidozyma auris,signatures/candidozyma_auris_clades.sig,99.7

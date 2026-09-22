@@ -18,89 +18,47 @@ include { BCFTOOLS_CONSENSUS } from '../../../modules/local/bcftools/consensus/m
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    SUBWORKFLOW TO PREPARE INPUTS
+    SUBWORKFLOW TO CALL VARIANTS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 workflow VARIANTS {
 
     take:
-    // ch_reads: [ val(meta), path(reads) ]
+    // ch_samplesheet: [ val(meta), path(reads) ]
     ch_samplesheet
+    // ch_refs: one record per reference, e.g. PREPARE.out.refs
+    //          (channel.fromList(ReferenceManifest.load(...).records))
+    ch_refs
     // make_consensus: boolean flag controlling consensus generation
     make_consensus
 
     main:
 
     // Collectors
-    ch_versions = Channel.empty()
-    ch_aln      = Channel.empty()
+    ch_versions = channel.empty()
+    ch_aln      = channel.empty()
 
     // -------------------------------------------------------------------------
-    // Load reference DB JSON and fan-out entries
+    // Samples with a reference supplied in the samplesheet keep it. All others
+    // get the reference (and ploidy) whose species and subtype both match.
+    // Samples with no matching reference are dropped, as before.
     // -------------------------------------------------------------------------
-    Channel
-        .fromPath(params.reference_db)
-        .splitJson()
-        .map { rec ->
-            if (!(rec instanceof Map)) {
-                throw new IllegalArgumentException("Each JSON item must be an object/map. Got: ${rec?.getClass()?.name}")
-            }
-
-            // Required keys present & non-empty?
-            def required = ['species','subtype','reference','ploidy']
-            def missing = required.findAll { k ->
-                !rec.containsKey(k) || rec[k] == null || (
-                    rec[k] instanceof Collection ? rec[k].isEmpty() : (rec[k] instanceof String && rec[k].trim().isEmpty())
-                )
-            }
-            if (missing) {
-                throw new IllegalArgumentException(
-                    "Invalid record in '${params.reference_db}': missing/empty ${missing.join(', ')}.\nRecord: ${groovy.json.JsonOutput.toJson(rec)}"
-                )
-            }
-
-            // Normalize fields (allow string or list for species/subtype)
-            def species  = (rec.species  instanceof Collection) ? rec.species  : [rec.species]
-            def subtype  = (rec.subtype  instanceof Collection) ? rec.subtype  : [rec.subtype]
-            def refPath  = rec.reference as String
-            def ploidy   = rec.ploidy
-
-            // Enforce .gz and file existence
-            if (!refPath.endsWith('.gz')) {
-                throw new IllegalArgumentException("Reference must be a .gz file. Got: '${refPath}'")
-            }
-            def refFile = file("${projectDir}/assets/").resolve(refPath)
-            if (!refFile.exists()) {
-                throw new IllegalArgumentException("Reference file not found: '${refFile}'")
-            }
-
-            // Return a clean, predictable shape
-            [ species: species, subtype: subtype, reference: refFile, ploidy: ploidy ]
+    ch_samplesheet
+        .branch { meta, reads ->
+            supplied: Utils.hasValue(meta.reference)
+            lookup:   true
         }
-        .set { ch_refs_db }
+        .set { ch_input }
 
-    // -------------------------------------------------------------------------
-    // For 'auto' rows: find matching reference by species/subtype; then unify with 'manual'
-    // Output ch_meta retains shape: [ meta, sp, sb, ref ]
-    // -------------------------------------------------------------------------
-    ch_samplesheet = ch_samplesheet
-        .filter{ meta, reads -> ! meta.reference }
-        .combine(ch_refs_db)
-        .map { meta, reads, refData ->
-            def supplied     = meta.reference && meta.ploidy ? true : false
-            def speciesMatch = refData.species.any  { Utils.sanitize(it) == Utils.sanitize(meta.species) }
-            def subtypeMatch = refData.subtype.any { Utils.sanitize(it) == Utils.sanitize(meta.subtype) }
-            def match        = supplied ? false : speciesMatch && subtypeMatch
-            def reference    = match ? refData.reference : meta.reference 
-            def ploidy       = match ? refData.ploidy : meta.ploidy
-            def new_meta     = meta + [reference: reference, ploidy: ploidy]
-
-            return [new_meta, reads]
+    ch_input.lookup
+        .combine( ch_refs.toList().map { refs -> [ refs ] } )
+        .map { meta, reads, refs ->
+            [ meta, reads, refs.find { ref -> matchesName(ref.species, meta.species) && matchesName(ref.subtype, meta.subtype) } ]
         }
-        .filter{ meta, reads -> meta.reference }
-        .concat(
-            ch_samplesheet.filter{ meta, reads -> meta.reference }
-        )
+        .filter { meta, reads, ref -> ref }
+        .map { meta, reads, ref -> [ meta + [ reference: ref.reference, ploidy: ref.ploidy ], reads ] }
+        .mix( ch_input.supplied )
+        .set { ch_samplesheet }
 
     // -------------------------------------------------------------------------
     // ALIGN_READS
@@ -187,4 +145,22 @@ workflow VARIANTS {
     aln         = ch_aln
     depth       = ch_depth
     versions    = ch_versions
+}
+
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    FUNCTIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+//
+// Whether a sample value (a name or list of names) matches any of a reference
+// record's names, compared after Utils.sanitize(). An unset value never matches.
+//
+def matchesName(names, value) {
+    def wanted = (value instanceof Collection ? value : [ value ])
+        .findAll { v -> Utils.hasValue(v) }
+        .collect { v -> Utils.sanitize(v.toString()) }
+    return wanted && names.any { n -> Utils.sanitize(n.toString()) in wanted }
 }
