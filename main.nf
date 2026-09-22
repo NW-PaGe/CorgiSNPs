@@ -1,9 +1,9 @@
 #!/usr/bin/env nextflow
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    DOH-JDJ0303/corgisnps
+    NW-PaGe/corgisnps
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Github : https://github.com/DOH-JDJ0303/corgisnps
+    Github : https://github.com/NW-PaGe/corgisnps
 ----------------------------------------------------------------------------------------
 */
 
@@ -25,7 +25,7 @@ include { PIPELINE_COMPLETION     } from './subworkflows/local/utils_nfcore_corg
 //
 // WORKFLOW: Run main analysis pipeline depending on type of input
 //
-workflow DOHJDJ0303_CORGISNPS {
+workflow NWPAGE_CORGISNPS {
 
     take:
     samplesheet // channel: samplesheet read in from --input
@@ -65,7 +65,7 @@ workflow {
     //
     // WORKFLOW: Run main workflow
     //
-    DOHJDJ0303_CORGISNPS (
+    NWPAGE_CORGISNPS (
         PIPELINE_INITIALISATION.out.samplesheet
     )
     //
@@ -78,7 +78,7 @@ workflow {
         params.outdir,
         params.monochrome_logs,
         params.hook_url,
-        DOHJDJ0303_CORGISNPS.out.multiqc_report
+        NWPAGE_CORGISNPS.out.multiqc_report
     )
 }
 

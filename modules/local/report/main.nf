@@ -108,7 +108,8 @@ process REPORT_SPECIES {
     def tree_arg = tree ? "--tree \"${tree}\"" : ''
     """
     ${tool} \\
-        --prefix ${prefix} \\
+        --species "${meta.species}" \\
+        --subtype "${meta.subtype}" \\
         --aln_stats "${aln_stats}" \\
         --dist "${dist}" \\
         --summary ${summary} \\

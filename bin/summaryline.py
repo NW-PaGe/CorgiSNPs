@@ -281,14 +281,17 @@ def perform_auto_qc(
         # Compare against threshold
         try:
             operator, threshold = criterion
-            
+            label = field
+
             # For z-scores, check absolute value
             if field.endswith('_z'):
                 value = abs(value)
-            
+                label = f"|{field}|"
+
             if not compare_values(value, operator, threshold):
                 qc_status = 'FAIL'
-                qc_fail.append(f"{field} {operator} {threshold}")
+                observed = round(value, 2) if isinstance(value, float) else value
+                qc_fail.append(f"{label} = {observed} (required {operator} {threshold})")
         except Exception as e:
             qc_status = 'FAIL'
             qc_error.append(field)
@@ -316,7 +319,7 @@ def perform_auto_qc(
 
 def main():
     """Main workflow summarization function."""
-    VERSION = "1.1"
+    VERSION = "1.2"
 
     parser = argparse.ArgumentParser(
         description="Summarize outputs from bioinformatics workflows",
@@ -344,7 +347,7 @@ def main():
     # QC parameters
     parser.add_argument("--min_ncbi_stats_n", type=int, default=3,
                         help="Minimum samples in NCBI stats for z-score calculation")
-    parser.add_argument("--min_depth", type=int, default=20,
+    parser.add_argument("--min_depth", type=int, default=30,
                         help="Minimum read depth for QC pass")
     parser.add_argument("--min_qual", type=float, default=0.8,
                         help="Minimum Q30 rate for QC pass")
@@ -453,9 +456,13 @@ def main():
         elif isinstance(value, float) and not key.endswith('_depth'):
             data[key] = round(value, 2)
 
+    # Samples processed here always come from the input samplesheet
+    data['status'] = 'new'
+
     # Define output column order
     output_columns = [
         'sample',
+        'status',
         'qc_status',
         'qc_reason',
         'species',

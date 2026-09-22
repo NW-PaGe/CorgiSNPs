@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
+import re
 import json
 import csv
+import gzip
 import argparse
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TextIO
 from Bio import Phylo
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -27,21 +29,57 @@ def _attach_text_file(mr: Dict[str, Any], slot: str, path: Path, outname: str) -
     mr['files'][slot]['name'] = outname
 
 # ----------------------------
+# Naming helpers
+# ----------------------------
+
+def make_prefix(species: str, subtype: str) -> str:
+    """
+    Build the file prefix from species and subtype: joined with a dash,
+    lowercased, and every whitespace character replaced by an underscore.
+    e.g. ("Escherichia coli", "ST 131") -> "escherichia_coli-st_131"
+    """
+    joined = f"{species.strip()}-{subtype.strip()}".lower()
+    return re.sub(r'\s', '_', joined)
+
+def make_meta_name(species: str, subtype: str, date: str) -> str:
+    """Microreact project name: '<species> <subtype> (<date>)'."""
+    return f"{species.strip()} {subtype.strip()} ({date})"
+
+# ----------------------------
 # File helpers
 # ----------------------------
 
+def open_text(path: str) -> TextIO:
+    """
+    Open a file for reading as text. Gzipped files are decompressed on the
+    fly; they are detected by their content, so the '.gz' extension is not
+    required.
+    """
+    with open(path, 'rb') as f:
+        is_gzip = f.read(2) == b'\x1f\x8b'
+    if is_gzip:
+        return gzip.open(path, 'rt', encoding='utf-8', newline='')
+    return open(path, 'r', encoding='utf-8', newline='')
+
+def detect_sep(path: str) -> str:
+    """Tab for .tsv / .tsv.gz files, comma otherwise."""
+    name = path.lower()
+    if name.endswith('.gz'):
+        name = name[:-3]
+    return '\t' if name.endswith('.tsv') else ','
+
 def load_json(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
+    with open_text(path) as f:
         return json.load(f)
 
 def load_csv(path: str, sep: str = ',') -> List[Dict[str, str]]:
-    with open(path, newline="", encoding="utf-8") as f:
+    with open_text(path) as f:
         return list(csv.DictReader(f, delimiter=sep))
 
 def load_dist(path: str, out_matrix: str = 'matrix.csv'):
     rowids, colids, mr_out = [], None, []
     M = None
-    with open(path, 'r', encoding='utf-8') as f:
+    with open_text(path) as f:
         for rn, line in enumerate(f):
             line = line.strip()
             if not line:
@@ -108,15 +146,27 @@ def extend_dict(main: Dict[str, Dict[str, Any]], new: Dict[str, Dict[str, Any]])
     for k, v in new.items():
         main[k] = main.get(k, {}) | v
 
+def is_reference_sample(sample_id: str) -> bool:
+    return bool(sample_id) and (sample_id == 'Reference' or sample_id.startswith('Reference_'))
+
+def reference_row(stats: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    if 'Reference' in stats:
+        return stats['Reference']
+    for key, row in stats.items():
+        if key.startswith('Reference_'):
+            return row
+    return {}
+
 # ----------------------------
 # Main
 # ----------------------------
 
 def main():
-    VERSION = "1.1"
+    VERSION = "1.4"
 
-    parser = argparse.ArgumentParser(description="Summarize outputs from various workflows")
-    parser.add_argument("--prefix", required=True, help="Prefix to use for file naming.")
+    parser = argparse.ArgumentParser(description="Summarize outputs from various workflows. All inputs may be gzipped.")
+    parser.add_argument("--species", required=True, help="Species name (e.g. 'Escherichia coli').")
+    parser.add_argument("--subtype", required=True, help="Subtype (e.g. 'ST131').")
     parser.add_argument("--aln_stats", required=True, help="Core alignment stats from PolyCore.")
     parser.add_argument("--summary", required=True, help="Combined summary file. May contain more than what is in core alignment.")
     parser.add_argument("--tree")
@@ -139,15 +189,18 @@ def main():
     )
     logging.info("Starting")
 
+    # Single run time, used for both the meta name date and the timestamp
+    run_time = datetime.now(timezone.utc)
+
     # Accumulators
     data: Dict[str, Dict[str, Any]] = {}
     stats_dict: Dict[str, Dict[str, Any]] = {}
     tree_samples: set = set()
 
-    # Output file names derived from the prefix. These are the same names the
-    # files are given inside the Microreact bundle, so the on-disk outputs now
-    # match the Microreact attachment names.
-    prefix = args.prefix or "project"
+    # Output file names derived from species and subtype. These are the same
+    # names the files are given inside the Microreact bundle.
+    prefix = make_prefix(args.species, args.subtype)
+    logging.info("Using prefix '%s'", prefix)
     summary_out_file = f"{prefix}_summary.csv"
     matrix_out_file = f"{prefix}_dist.csv"
     tree_out_file = f"{prefix}.nwk"
@@ -155,8 +208,7 @@ def main():
     # ----------------------------
     # Alignment stats
     # ----------------------------
-    sep = '\t' if args.aln_stats.lower().endswith('.tsv') else ','
-    stats_dict = list2map(load_csv(args.aln_stats, sep), key='name')
+    stats_dict = list2map(load_csv(args.aln_stats, detect_sep(args.aln_stats)), key='name')
     if stats_dict:
         extend_dict(data, stats_dict)
     logging.info("Loaded alignment stats (%d rows)", len(stats_dict))
@@ -176,13 +228,14 @@ def main():
     # Tree (optional)
     # ----------------------------
     if args.tree:
-        tree = Phylo.read(args.tree, 'newick')
+        with open_text(args.tree) as f:
+            tree = Phylo.read(f, 'newick')
         tree.root_at_midpoint()
 
         # Attempt to scale by reference length if present
         scale = 1.0
         try:
-            vb = stats_dict.get('Reference', {}).get('length')
+            vb = reference_row(stats_dict).get('length')
             if vb:
                 scale = float(vb)
             else:
@@ -211,10 +264,11 @@ def main():
     # Summary, filtered by alignment stats
     # ----------------------------
     original_fieldnames: List[str] = []
-    sep = '\t' if args.summary.lower().endswith('.tsv') else ','
-    summary_rows = load_csv(args.summary, sep)
+    samplesheet_ids: set = set()
+    summary_rows = load_csv(args.summary, detect_sep(args.summary))
     if summary_rows:
         original_fieldnames = list(summary_rows[0].keys())
+        samplesheet_ids = {r.get('sample', '') for r in summary_rows}
 
         filtered_rows = [r for r in summary_rows if r.get('sample', '') in stats_dict]
         logging.info("Filtered summary by alignment stats: %d -> %d", len(summary_rows), len(filtered_rows))
@@ -238,12 +292,20 @@ def main():
             if include_only and (sample_id not in include_only):
                 continue
             rec = {'sample': sample_id}
+            if is_reference_sample(sample_id):
+                rec['status'] = ''
+            elif sample_id in samplesheet_ids:
+                rec['status'] = 'new'
+            else:
+                rec['status'] = 'old'
             for k, v in sample_data.items():
+                if k in ('sample', 'status'):
+                    continue
                 if v != sample_id:  # avoid duplicating id if present as a value
-                    rec[k] = ';'.join(map(str, v)) if isinstance(v, list) else v
+                    rec[k] = ':'.join(map(str, v)) if isinstance(v, list) else v
 
                     # Track columns that are NEW (not from the original summary header)
-                    if k != 'sample' and (k not in original_fieldnames) and (k not in created_seen):
+                    if (k not in original_fieldnames) and (k not in created_seen):
                         created_cols_order.append(k)
                         created_seen.add(k)
 
@@ -255,15 +317,15 @@ def main():
         for rec in summary_records:
             all_keys.update(rec.keys())
 
-        # 1) sample
-        fieldnames: List[str] = ['sample']
+        # 1) sample, then status
+        fieldnames: List[str] = ['sample', 'status']
 
         # 2) newly created columns (in first-seen order)
         #    Keep only those that actually appear in the data
-        fieldnames.extend([c for c in created_cols_order if c in all_keys])
+        fieldnames.extend([c for c in created_cols_order if c in all_keys and c not in ('sample', 'status')])
 
         # 3) remaining columns from the original summary, in their original order
-        fieldnames.extend([fld for fld in original_fieldnames if fld != 'sample' and fld in all_keys])
+        fieldnames.extend([fld for fld in original_fieldnames if fld not in ('sample', 'status') and fld in all_keys])
 
         with open(summary_out_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
@@ -295,9 +357,11 @@ def main():
             _attach_text_file(mr_json, "dist_file", Path(matrix_out_file), matrix_out_file)
 
         # Meta
-        mr_json['meta']['name'] = prefix
+        mr_json['meta']['name'] = make_meta_name(
+            args.species, args.subtype, run_time.date().isoformat()
+        )
         mr_json['meta']['timestamp'] = (
-            datetime.now(timezone.utc)
+            run_time
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )

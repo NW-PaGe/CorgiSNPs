@@ -1,7 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://raw.githubusercontent.com/DOH-JDJ0303/CorgiSNPs/master/assets/schema_input.json",
-    "title": "DOH-JDJ0303/CorgiSNPs pipeline - params.input schema",
+    "$id": "https://raw.githubusercontent.com/NW-PaGe/CorgiSNPs/master/assets/schema_input.json",
+    "title": "NW-PaGe/CorgiSNPs pipeline - params.input schema",
     "description": "Schema for the file provided with params.input",
     "type": "array",
     "items": {

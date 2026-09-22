@@ -21,7 +21,7 @@ include { FASTP        } from '../../../modules/nf-core/fastp/main'
 workflow PREPARE {
 
     take:
-    // Channel: [ val(meta), path(reads) ] plus optional fields (sp, sb, ref, sra)
+    // Channel: [ meta: meta, reads: reads ] records; meta may include species, subtype, reference, sra
     ch_samplesheet
 
     main:
@@ -31,7 +31,18 @@ workflow PREPARE {
     ch_multiqc_files = Channel.empty()
 
     // -------------------------------------------------------------------------
-    // MODULE: Download reads from SRA for sra_true rows
+    // Load the reference manifest (validated unless --validate_refs false).
+    // A manifest that can't be read at all is always reported.
+    // -------------------------------------------------------------------------
+    def ref_db = ReferenceManifest.load(params.reference_db, params.validate_refs as boolean)
+
+    if( ref_db.errors )
+        error "Invalid reference directory '${params.reference_db}':\n" + ref_db.errors.collect { "  - ${it}" }.join('\n')
+
+    ch_refs = channel.fromList(ref_db.records)
+
+    // -------------------------------------------------------------------------
+    // MODULE: Download reads from SRA for rows with an SRA accession
     // Input reshaped to [ meta, sra ]
     // -------------------------------------------------------------------------
     FASTERQDUMP(
@@ -42,29 +53,30 @@ workflow PREPARE {
     ch_versions = ch_versions.mix(FASTERQDUMP.out.versions)
 
     // -------------------------------------------------------------------------
-    // Merge SRA-derived reads back with pass-through non-SRA reads
-    // Ensure meta.single_end is set based on number of read files
-    // Output ch_samplesheet retains shape: [ meta, reads, sp, sb, ref ]
+    // Merge SRA-derived reads back with pass-through non-SRA reads.
+    // Reads are always a list (a single file comes out of a process as a lone
+    // path), meta.single_end is set from the number of files for SRA reads,
+    // and meta.sra is removed.
+    // Output: [ meta: meta, reads: [ paths ] ]
     // -------------------------------------------------------------------------
     FASTERQDUMP
         .out
         .reads
-        .map{ meta, reads -> 
-            def new_meta = meta + [single_end: reads.size() == 1]
-            [meta: new_meta, reads: reads] 
+        .map{ meta, reads ->
+            def files = reads instanceof List ? reads : [ reads ]
+            [ meta: meta + [ single_end: files.size() == 1 ], reads: files ]
         }
-        .concat( 
+        .concat(
             ch_samplesheet.filter{ ! it.meta.sra }
         )
         .map{ it ->
-            def new_meta = it.meta.findAll{ k, v -> k != 'sra' }
-            return it + [meta: new_meta]
-         }
+            def files = it.reads instanceof List ? it.reads : [ it.reads ]
+            [ meta: it.meta.findAll{ k, v -> k != 'sra' }, reads: files ]
+        }
         .set { ch_samplesheet }
 
     // -------------------------------------------------------------------------
     // MODULE: Downsample reads with seqtk sample (if --max_reads provided)
-    // Keeps tuple shape [ meta, reads ] throughout.
     // -------------------------------------------------------------------------
     if (params.max_reads) {
 
@@ -75,24 +87,26 @@ workflow PREPARE {
                 ok  : n <= params.max_reads
                 high: n >  params.max_reads
             }
-            .set { ch_samplesheet }
+            .set { ch_reads_count }
 
         // For high-coverage samples, sample each mate independently
         SEQTK_SAMPLE(
-            ch_samplesheet
+            ch_reads_count
                 .high
                 .map{ it, n -> [it.meta, it.reads, params.max_reads] }
                 .transpose()
         )
         ch_versions = ch_versions.mix(SEQTK_SAMPLE.out.versions)
 
-        // Re-assemble paired reads and merge with ok set
+        // Re-assemble paired reads (sorted by name so R1 comes before R2,
+        // since groupTuple collects them in completion order) and merge with
+        // the samples that were under the limit
         SEQTK_SAMPLE
             .out
             .read
             .groupTuple(by: 0)
-            .map{ meta, reads -> [meta: meta, reads: reads] }                            // -> [ meta, [paths...] ]
-            .concat( ch_samplesheet.ok.map { it, n -> it } )
+            .map{ meta, reads -> [ meta: meta, reads: reads.sort { r -> r.name } ] }
+            .concat( ch_reads_count.ok.map { it, n -> it } )
             .set { ch_samplesheet }
     }
 
@@ -121,6 +135,7 @@ workflow PREPARE {
     ch_samplesheet = FASTP.out.reads
 
     emit:
+    refs          = ch_refs
     samplesheet   = ch_samplesheet
     read_stats    = FASTP.out.json
     versions      = ch_versions

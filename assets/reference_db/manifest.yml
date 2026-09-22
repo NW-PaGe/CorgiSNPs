@@ -1,0 +1,93 @@
+# ==============================================================================
+# Reference database manifest
+# ==============================================================================
+#
+# One entry per species. Each entry's files live in a directory named after its
+# `name`, next to this manifest, with one folder per file type:
+#
+#   reference_db/
+#     manifest.yml
+#     candidozyma_auris/
+#       assembly/GCA_016772135.1.fna.gz
+#       annotation/GCA_016772135.1.gff.gz
+#
+# A file path is used as written if it exists (absolute, or relative to the
+# launch directory); otherwise it is looked for at <name>/<assembly|annotation>/<file>.
+#
+# Species fields (apply to every subtype; a subtype can override them)
+#   name          required  ID and directory name. Letters, numbers, '.', '_', '-'; unique.
+#   species       required  Species names. The first is preferred; the rest are aliases.
+#   ploidy        optional  Used for variant calling.
+#   subtype_ani   optional  ANI threshold for subtyping: fraction (0.997)
+#   subtypes      required  One entry per subtype (below).
+#
+# Subtype fields
+#   subtype       required  Subtype names; unique within the species.
+#   assembly      required  Reference assembly (FASTA, may be gzipped). File in <name>/assembly/, or a path.
+#   annotation    optional  Annotation for the assembly (GFF). File in <name>/annotation/, or a path.
+#   amr           optional  AMR target regions, in the assembly's coordinates:
+#                             chrom, gene, coords: [start, end],
+#                             regions: [ { name, coords: [start, end] }, ... ]
+#                           Requires `annotation`. Samples on this subtype are annotated
+#                           with a snpEff database built from its assembly and annotation.
+#   primary       optional  true for the subtype whose AMR targets are used for samples on
+#                           subtypes without `amr`. Only needed when more than one subtype
+#                           has `amr`; a single `amr` subtype is primary automatically.
+#
+# Any other field is passed through to the pipeline unchanged.
+#
+# ------------------------------------------------------------------------------
+# Template: copy, uncomment and fill in
+# ------------------------------------------------------------------------------
+#
+# ## Genus species
+# - name: genus_species
+#   species:
+#     - Genus species
+#   ploidy: 1
+#   subtype_ani: 0.997
+#   subtypes:
+#     - subtype: [Subtype A]
+#       assembly: GCA_000000000.1.fna.gz
+#       annotation: GCA_000000000.1.gff.gz
+#       primary: true
+#       amr:
+#         - chrom: CONTIG_ID
+#           gene: GENE
+#           coords: [1, 1000]
+#           regions:
+#             - name: REGION
+#               coords: [100, 200]
+#
+# ==============================================================================
+
+## Candidozyma auris
+- name: candidozyma_auris
+  species:
+    - Candidozyma auris
+    - Candida auris
+  ploidy: 1
+  subtype_ani: 0.997
+  subtypes:
+    - subtype: [Clade I]
+      assembly: GCA_016772135.1.fna.gz
+      annotation: GCA_016772135.1.gff.gz
+      amr:
+        - chrom: CP060340.1
+          gene: FKS1
+          coords: [219735, 225401]
+          regions:
+            - name: HS1
+              coords: [221637, 221663]
+            - name: HS2
+              coords: [223782, 223805]
+            - name: HS3
+              coords: [221805, 221807]
+    - subtype: [Clade II]
+      assembly: GCA_003013715.2.fna.gz
+    - subtype: [Clade III]
+      assembly: GCA_002775015.1.fna.gz
+    - subtype: [Clade IV]
+      assembly: GCA_003014415.1.fna.gz
+    - subtype: [Clade V]
+      assembly: GCA_016809505.1.fna.gz

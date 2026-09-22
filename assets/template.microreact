@@ -150,7 +150,7 @@
                       {
                         "type": "tab",
                         "id": "matrix-1",
-                        "name": "Matrix",
+                        "name": "Core SNP",
                         "component": "Matrix"
                       }
                     ]
@@ -184,7 +184,7 @@
                   {
                     "type": "tab",
                     "id": "chart-1",
-                    "name": "Chart",
+                    "name": "Progressive Core Genome Fraction",
                     "component": "Chart"
                   }
                 ],
@@ -225,7 +225,10 @@
       "alignLabels": true,
       "blockHeaderFontSize": 13,
       "blockPadding": 0,
-      "blocks": [],
+      "blocks": [
+        "status",
+        "partition"
+      ],
       "blockSize": 14,
       "branchLengthsDigits": 4,
       "controls": true,

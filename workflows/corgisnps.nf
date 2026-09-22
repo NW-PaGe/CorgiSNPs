@@ -16,12 +16,11 @@ include { VARIANTS } from '../subworkflows/local/variants'
 include { AMR      } from '../subworkflows/local/amr'
 include { PHYLO    } from '../subworkflows/local/phylo'
 
-// Report / Summary Modules
+// Report / summary modules
 include { SUMMARYLINE    } from '../modules/local/report/main'
 include { ADD_AMR        } from '../modules/local/report/main'
 include { REPORT_SPECIES } from '../modules/local/report/main'
 include { REPORT_ALL     } from '../modules/local/report/main'
-
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -31,82 +30,66 @@ include { REPORT_ALL     } from '../modules/local/report/main'
 workflow CORGISNPS {
 
     take:
-    // Channel: samplesheet read in from --input
-    ch_samplesheet
+    ch_samplesheet // channel: samplesheet read in from --input
 
     main:
-
-    // Collectors for versions and MultiQC input files
     ch_versions      = Channel.empty()
     ch_multiqc_files = Channel.empty()
 
-    // ---------------------------
+    // =========================================================================
     // PREPARE
-    // ---------------------------
-    PREPARE(
-        ch_samplesheet
-    )
-    ch_versions       = ch_versions.mix(PREPARE.out.versions)
-    ch_multiqc_files  = ch_multiqc_files.mix(PREPARE.out.multiqc_files)
-    ch_samplesheet    = PREPARE.out.samplesheet
-    ch_read_stats     = PREPARE.out.read_stats
+    // =========================================================================
+    PREPARE(ch_samplesheet)
 
-    // Initialize empty downstream channels.
-    ch_blank     = ch_samplesheet.map{ [ it[0], [] ] }
+    ch_versions      = ch_versions.mix(PREPARE.out.versions)
+    ch_multiqc_files = ch_multiqc_files.mix(PREPARE.out.multiqc_files)
+    ch_refs          = PREPARE.out.refs
+    ch_samplesheet   = PREPARE.out.samplesheet
+    ch_read_stats    = PREPARE.out.read_stats
+
+    // Placeholder channels ([meta, []]) for optional downstream outputs
+    ch_blank     = ch_samplesheet.map { meta, reads -> [meta, []] }
     ch_denovo    = ch_blank
     ch_species   = ch_blank
     ch_subtype   = ch_blank
-    ch_depth     = ch_blank
-    ch_amr       = ch_blank
     ch_aln_stats = ch_blank
     ch_tree      = ch_blank
     ch_dist      = ch_blank
 
-    // ---------------------------
-    // CLASSIFY (optional)
-    // ---------------------------
+    // =========================================================================
+    // CLASSIFY (optional) - only samples missing species or subtype
+    // =========================================================================
     if (params.classify) {
+        ch_to_classify   = ch_samplesheet.filter { meta, reads -> !(meta.species && meta.subtype) }
+        ch_pre_classified = ch_samplesheet.filter { meta, reads ->   meta.species && meta.subtype  }
 
-        CLASSIFY(
-            ch_samplesheet
-                .filter{ meta, reads ->
-                    !(meta.species && meta.subtype)
-                }
-        )
-        ch_versions = ch_versions.mix(CLASSIFY.out.versions)
+        CLASSIFY(ch_to_classify, ch_refs)
 
-        // Merge back classified meta with pass-through meta
-        ch_samplesheet = CLASSIFY.out.samplesheet.concat(ch_samplesheet.filter{ meta, reads -> (meta.species && meta.subtype) })
+        ch_versions    = ch_versions.mix(CLASSIFY.out.versions)
+        ch_samplesheet = CLASSIFY.out.samplesheet.concat(ch_pre_classified)
         ch_denovo      = CLASSIFY.out.denovo
         ch_species     = CLASSIFY.out.species
         ch_subtype     = CLASSIFY.out.subtype
     }
 
-    // Sanitize species/subtype strings in-flight
-    ch_samplesheet = ch_samplesheet
-        .map { meta, reads -> 
-            def new_meta = meta + [species: Utils.sanitize(meta.species), subtype: Utils.sanitize(meta.subtype)]
-            [ new_meta, reads ] 
-        }
+    // Sanitize species/subtype strings
+    ch_samplesheet = ch_samplesheet.map { meta, reads ->
+        [ meta + [species: Utils.sanitize(meta.species), subtype: Utils.sanitize(meta.subtype)], reads ]
+    }
 
+    // =========================================================================
+    // SUMMARYLINE - per-sample summary and auto QC
+    // Joins keep samples lacking some inputs (remainder: true); missing
+    // entries become [] so every tuple has the same shape.
+    // =========================================================================
+    ch_samples = ch_samplesheet
+        .map  { meta, reads -> [meta.id, meta] }
+        .join (ch_read_stats.map { meta, file -> [meta.id, file] }, remainder: true)
+        .join (ch_denovo.map     { meta, file -> [meta.id, file] }, remainder: true)
+        .join (ch_species.map    { meta, file -> [meta.id, file] }, remainder: true)
+        .join (ch_subtype.map    { meta, file -> [meta.id, file] }, remainder: true)
+        .map  { row -> row.drop(1).collect { it ?: [] } } // drop join key, replace nulls with []
 
-    // -------------------------------------------------------------------------
-    // Collate per-sample inputs for SUMMARYLINE.
-    // Joins preserve samples lacking some inputs via 'remainder: true';
-    // missing items are replaced with [] to keep tuple shapes consistent.
-    // -------------------------------------------------------------------------
-    ch_samplesheet
-        .map{meta, reads -> [meta.id, meta]}
-        .join(ch_read_stats.map{ meta, file -> [meta.id, file] }, remainder: true)
-        .join(ch_denovo.map{ meta, file -> [meta.id, file] },     remainder: true)
-        .join(ch_species.map{ meta, file -> [meta.id, file] },    remainder: true)
-        .join(ch_subtype.map{ meta, file -> [meta.id, file] },    remainder: true)
-        .map { it.collect { k -> k ? k : [] }.drop(1) }
-        .set { ch_samples }
-
-    // -------------------------------------------------------------------------
-    // Per-sample summary lines
-    // -------------------------------------------------------------------------
     SUMMARYLINE(
         ch_samples,
         file(params.input),
@@ -114,99 +97,78 @@ workflow CORGISNPS {
     )
     ch_versions = ch_versions.mix(SUMMARYLINE.out.versions.first())
 
-    ch_auto_qc = SUMMARYLINE
-        .out
-        .summary
+    // QC status per sample (--ignore_qc passes everything)
+    ch_auto_qc = SUMMARYLINE.out.summary
         .splitCsv(header: true)
-        .map{ meta, data -> [meta, params.ignore_qc ? true : (data.containsKey('qc_status') ? data['qc_status'] == 'PASS' : false) ] } // option to ignore auto QC here
-        .branch{ meta, status ->
-            pass: status
-            not_pass: !status }
+        .map    { meta, data -> [meta, params.ignore_qc || data.qc_status == 'PASS'] }
+        .branch { meta, status ->
+            pass    : status
+            not_pass: !status
+        }
 
-    ch_samplesheet_pass = ch_samplesheet
-        .join(
-            ch_auto_qc.pass.map{meta, status -> [meta]}
-        )
+    ch_qc_pass_meta = ch_auto_qc.pass.map     { meta, status -> [meta] }
+    ch_qc_fail_meta = ch_auto_qc.not_pass.map { meta, status -> [meta] }
 
-    ch_summary_pass = SUMMARYLINE
-        .out
-        .summary
-        .join(
-            ch_auto_qc.pass.map{meta, status -> [meta]}
-        )
-    ch_summary_fail = SUMMARYLINE
-        .out
-        .summary
-        .join(
-            ch_auto_qc.not_pass.map{meta, status -> [meta]}
-        )
+    ch_samplesheet_pass = ch_samplesheet.join(ch_qc_pass_meta)
+    ch_summary_pass     = SUMMARYLINE.out.summary.join(ch_qc_pass_meta)
+    ch_summary_fail     = SUMMARYLINE.out.summary.join(ch_qc_fail_meta)
 
-    // ---------------------------
+    // =========================================================================
     // VARIANTS / AMR / PHYLO (optional)
-    // ---------------------------
+    // =========================================================================
     if (params.variants) {
-        VARIANTS(
-            ch_samplesheet_pass,
-            true
-        )
+        VARIANTS(ch_samplesheet_pass, ch_refs, true)
+
         ch_versions         = ch_versions.mix(VARIANTS.out.versions)
         ch_samplesheet_pass = VARIANTS.out.samplesheet
-        ch_depth            = VARIANTS.out.depth
         ch_bam              = VARIANTS.out.bam
         ch_vcf              = VARIANTS.out.vcf
         ch_aln              = VARIANTS.out.aln
 
-        if(params.amr){
-            AMR(
-                ch_samplesheet_pass,
-                ch_bam,
-                ch_vcf
-            )
+        if (params.amr) {
+            AMR(ch_samplesheet_pass, ch_bam, ch_vcf, ch_refs)
             ch_versions = ch_versions.mix(AMR.out.versions)
 
-            // Join summary rows with AMR outputs by stable sample ID (meta.id), not full meta
+            // Join summary rows with AMR output by sample ID (meta.id), not full meta
             ch_summary_pass_amr = ch_summary_pass
-                .map { meta, summaryline -> [meta.id, meta, summaryline] }
-                .join(
-                    AMR.out.summary.map { meta, amr_summary -> [meta.id, amr_summary] },
-                    remainder: true
-                )
-                .map { id, meta, summaryline, amr_summary -> [meta, summaryline, amr_summary] }
-                .branch{ meta, summaryline, amr_summary ->
-                    pass: summaryline && amr_summary
-                    not_pass: summaryline && !amr_summary  }
+                .map  { meta, summaryline -> [meta.id, meta, summaryline] }
+                .join (AMR.out.summary.map { meta, amr_summary -> [meta.id, amr_summary] }, remainder: true)
+                .map  { id, meta, summaryline, amr_summary -> [meta, summaryline, amr_summary] }
+                .branch { meta, summaryline, amr_summary ->
+                    pass    : summaryline && amr_summary
+                    not_pass: summaryline && !amr_summary
+                }
 
-            ADD_AMR(
-                ch_summary_pass_amr.pass
+            ADD_AMR(ch_summary_pass_amr.pass)
+            ch_versions = ch_versions.mix(ADD_AMR.out.versions)
+
+            ch_summary_pass = ADD_AMR.out.summary.concat(
+                ch_summary_pass_amr.not_pass.map { meta, summaryline, amr_summary -> [meta, summaryline] }
             )
-            ch_versions     = ch_versions.mix(ADD_AMR.out.versions)
-            ch_summary_pass = ADD_AMR
-                .out
-                .summary
-                .concat(
-                    ch_summary_pass_amr
-                        .not_pass
-                        .map{[it[0], it[1]]}
-                )
         }
-        if(params.phylo){
-            PHYLO(
-                ch_aln,
-                ch_samplesheet_pass
-            )
+
+        if (params.phylo) {
+            PHYLO(ch_aln, ch_samplesheet_pass)
+
             ch_versions  = ch_versions.mix(PHYLO.out.versions)
             ch_aln_stats = PHYLO.out.aln_stats
             ch_tree      = PHYLO.out.tree
             ch_dist      = PHYLO.out.dist
         }
     }
-    
+
+    // =========================================================================
+    // REPORTS
+    // =========================================================================
     REPORT_ALL(
-        ch_summary_pass.concat(ch_summary_fail).map{meta, summaryline -> summaryline}.collect()
+        ch_summary_pass
+            .concat(ch_summary_fail)
+            .map { meta, summaryline -> summaryline }
+            .collect()
     )
 
-    if(params.phylo){
-        REPORT_SPECIES (
+    if (params.phylo) {
+        REPORT_SPECIES(
             ch_aln_stats
                 .join(ch_dist, by: 0)
                 .join(ch_tree, by: 0, remainder: true)
@@ -216,56 +178,37 @@ workflow CORGISNPS {
         )
     }
 
-    // ---------------------------
+    // =========================================================================
     // Collate and save software versions
-    // ---------------------------
-    softwareVersionsToYAML(ch_versions)
+    // =========================================================================
+    ch_collated_versions = softwareVersionsToYAML(ch_versions)
         .collectFile(
             storeDir: "${params.outdir}/pipeline_info",
-            name    : 'CorgiSNPs_software_' + 'mqc_' + 'versions.yml',
+            name    : 'CorgiSNPs_software_mqc_versions.yml',
             sort    : true,
             newLine : true
         )
-        .set { ch_collated_versions }
 
-    // ---------------------------
-    // MultiQC setup
-    // ---------------------------
-    ch_multiqc_config = Channel.fromPath(
-        "$projectDir/assets/multiqc_config.yml",
-        checkIfExists: true
-    )
-    ch_multiqc_custom_config = params.multiqc_config
-        ? Channel.fromPath(params.multiqc_config, checkIfExists: true)
-        : Channel.empty()
-    ch_multiqc_logo = params.multiqc_logo
-        ? Channel.fromPath(params.multiqc_logo, checkIfExists: true)
-        : Channel.empty()
+    // =========================================================================
+    // MultiQC
+    // =========================================================================
+    ch_multiqc_config        = Channel.fromPath("$projectDir/assets/multiqc_config.yml", checkIfExists: true)
+    ch_multiqc_custom_config = params.multiqc_config ? Channel.fromPath(params.multiqc_config, checkIfExists: true) : Channel.empty()
+    ch_multiqc_logo          = params.multiqc_logo   ? Channel.fromPath(params.multiqc_logo,   checkIfExists: true) : Channel.empty()
 
-    summary_params       = paramsSummaryMap(workflow, parameters_schema: "nextflow_schema.json")
-    ch_workflow_summary  = Channel.value(paramsSummaryMultiqc(summary_params))
-    ch_multiqc_files     = ch_multiqc_files.mix(
-        ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml')
-    )
+    summary_params      = paramsSummaryMap(workflow, parameters_schema: "nextflow_schema.json")
+    ch_workflow_summary = Channel.value(paramsSummaryMultiqc(summary_params))
 
-    ch_multiqc_custom_methods_description = params.multiqc_methods_description
+    ch_methods_description_file = params.multiqc_methods_description
         ? file(params.multiqc_methods_description, checkIfExists: true)
         : file("$projectDir/assets/methods_description_template.yml", checkIfExists: true)
-    ch_methods_description = Channel.value(
-        methodsDescriptionText(ch_multiqc_custom_methods_description)
-    )
+    ch_methods_description = Channel.value(methodsDescriptionText(ch_methods_description_file))
 
-    ch_multiqc_files = ch_multiqc_files.mix(ch_collated_versions)
-    ch_multiqc_files = ch_multiqc_files.mix(
-        ch_methods_description.collectFile(
-            name: 'methods_description_mqc.yaml',
-            sort: true
-        )
-    )
+    ch_multiqc_files = ch_multiqc_files
+        .mix(ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml'))
+        .mix(ch_collated_versions)
+        .mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml', sort: true))
 
-    // ---------------------------
-    // MULTIQC
-    // ---------------------------
     MULTIQC(
         ch_multiqc_files.collect(),
         ch_multiqc_config.toList(),
@@ -276,10 +219,8 @@ workflow CORGISNPS {
     )
 
     emit:
-    // Path to MultiQC HTML report
-    multiqc_report = MULTIQC.out.report.toList()
-    // Channel of versions.yml files from all stages
-    versions       = ch_versions
+    multiqc_report = MULTIQC.out.report.toList() // path: MultiQC HTML report
+    versions       = ch_versions                 // channel: versions.yml files from all stages
 }
 
 /*
