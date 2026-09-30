@@ -17,7 +17,6 @@ process IQTREE {
     prefix       = "${meta.species}-${meta.subtype}"
     uniq_seq = (count?.isInteger() ? count.toInteger() : 0)
     bootstrap    = uniq_seq > 4 ? '-B 1000' : ''
-    tree_ext     = uniq_seq > 4 ? 'contree' : 'treefile'
     """
     # run IQTREE3
     iqtree3 \\
@@ -27,7 +26,7 @@ process IQTREE {
         ${args} \\
         ${bootstrap}
 
-    mv *.${tree_ext} ${prefix}.nwk
+    mv *.treefile ${prefix}.nwk
 
     #### VERSION INFO ####
     cat <<-END_VERSIONS > versions.yml
