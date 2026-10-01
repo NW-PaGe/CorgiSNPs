@@ -41,7 +41,7 @@ def parse_amr(amr_dict):
 # ----------------------------
 
 def main():
-    version = "1.0"
+    version = "1.1"
 
     parser = argparse.ArgumentParser(
         description="Summarize outputs from various workflows"
@@ -69,11 +69,14 @@ def main():
     amr_data = load_csv(args.amr, 'amr')
     amr_parsed = parse_amr(amr_data)
 
+    # Insert AMR columns after the assembly QC columns ('denovo_gc_z' in
+    # summaries written before QC ranges replaced z-scores)
+    anchor = next((k for k in ('qc_range_source', 'denovo_gc_z') if k in summaryline_data), None)
     final = {}
-    if 'denovo_gc_z' in summaryline_data:
+    if anchor:
         for k, v in summaryline_data.items():
             final[k] = v
-            if k == 'denovo_gc_z':
+            if k == anchor:
                 final = final | amr_parsed
     else:
         final = summaryline_data | amr_parsed

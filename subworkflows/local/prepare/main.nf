@@ -39,7 +39,17 @@ workflow PREPARE {
     if( ref_db.errors )
         error "Invalid reference directory '${params.reference_db}':\n" + ref_db.errors.collect { "  - ${it}" }.join('\n')
 
+    // Report species/subtype settings that differ from the run-level parameters
+    def overrides = ReferenceManifest.describeOverrides(ref_db.records, params)
+    if( overrides )
+        log.info "Reference database settings overriding run parameters:\n" + overrides.collect { "  - ${it}" }.join('\n')
+
     ch_refs = channel.fromList(ref_db.records)
+
+    // Species names and QC ranges from the manifest, as JSON for SUMMARYLINE
+    ch_qc_ranges = channel
+        .of( groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(ReferenceManifest.qcRanges(ref_db.records))) )
+        .collectFile(name: 'reference_qc_ranges.json', newLine: true)
 
     // -------------------------------------------------------------------------
     // MODULE: Download reads from SRA for rows with an SRA accession
@@ -143,6 +153,7 @@ workflow PREPARE {
 
     emit:
     refs          = ch_refs
+    qc_ranges     = ch_qc_ranges   // path: reference_qc_ranges.json
     samplesheet   = ch_samplesheet
     read_stats    = FASTP.out.json
     versions      = ch_versions

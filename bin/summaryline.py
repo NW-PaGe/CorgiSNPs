@@ -8,6 +8,7 @@ and performs automated QC checks.
 
 import json
 import csv
+import re
 import screed
 import argparse
 import logging
@@ -24,11 +25,22 @@ def normalize_value(value: Any) -> Optional[str]:
     return str(value).lower().strip()
 
 
-def calculate_z_score(value: float, mean: float, sd: float) -> Optional[float]:
-    """Calculate z-score if standard deviation is valid."""
-    if sd and sd > 0:
-        return (value - mean) / sd
-    return None
+def sanitize(value: Any) -> Optional[str]:
+    """Normalize a name the way the pipeline does (Utils.sanitize)."""
+    if value is None:
+        return None
+    return re.sub(r'[^A-Za-z0-9_-]', '_', str(value).strip()).lower()
+
+
+def parse_range(value: Any) -> Optional[tuple]:
+    """Return (min, max) floats from a [min, max] list, or None if invalid."""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    try:
+        low, high = float(value[0]), float(value[1])
+    except (TypeError, ValueError):
+        return None
+    return (low, high) if low <= high else None
 
 
 def compare_values(a: Any, op: str, b: Any) -> bool:
@@ -102,72 +114,112 @@ def calculate_genome_stats(records) -> Dict[str, Any]:
     }
 
 
-def calculate_taxid_stats(
-    data: Dict[str, Any],
-    ncbi_stats: List[Dict[str, str]],
+def find_ncbi_record(
+    ncbi_stats: List[Dict[str, Any]],
     taxid: Optional[str],
-    min_n: int
-) -> Dict[str, Any]:
+    species: Optional[str],
+    aliases: Optional[List[str]] = None
+) -> Optional[Dict[str, Any]]:
     """
-    Calculate z-scores for assembly metrics using NCBI reference stats.
-    
-    Matches by taxid if provided, otherwise by species name.
-    Only calculates z-scores if reference has sufficient samples (>= min_n).
+    Find the NCBI stats record for a sample: by taxid if provided, then by
+    species name, then by the species' aliases from the reference manifest
+    (e.g. 'Candida auris' -> 'Candidozyma auris').
     """
-    result: Dict[str, Any] = {}
+    targets = [(taxid, 'taxids'), (species, 'names')] + [(a, 'names') for a in (aliases or [])]
+    for target, column in targets:
+        target = normalize_value(target)
+        if not target:
+            continue
+        for rec in ncbi_stats:
+            if target in [normalize_value(v) for v in rec.get(column, [])]:
+                return rec
+    return None
 
-    # Determine what to match on
-    target = taxid if taxid else data.get('species')
-    match_column = 'taxids' if taxid else 'names'
 
-    target = normalize_value(target)
+def find_reference_record(
+    reference_qc: List[Dict[str, Any]],
+    species: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """Find the reference manifest QC entry whose species names include the sample's species."""
+    target = sanitize(species)
     if not target:
-        return result
-            
-    # Find matching reference stats
-    for rec in ncbi_stats:
-        rec_values = [ normalize_value(v) for v in rec.get(match_column, []) ]
-        
-        if target not in rec_values:
+        return None
+    for rec in reference_qc:
+        if target in [sanitize(v) for v in rec.get('species', [])]:
+            return rec
+    return None
+
+
+def resolve_qc_ranges(
+    ncbi_rec: Optional[Dict[str, Any]],
+    ref_rec: Optional[Dict[str, Any]],
+    min_n: int
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Acceptable assembly length and GC ranges, per metric: from the reference
+    manifest when it sets one, otherwise from NCBI (if it has >= min_n genomes).
+
+    Returns e.g. {'length': {'range': (min, max), 'source': 'manifest'}, ...}
+    """
+    ranges: Dict[str, Dict[str, Any]] = {}
+    for metric in ('length', 'gc'):
+        key = f'{metric}_range'
+
+        rng = parse_range(ref_rec.get(key)) if ref_rec else None
+        if rng:
+            ranges[metric] = {'range': rng, 'source': 'manifest'}
             continue
-        
-        # Extract reference statistics
-        length_mean = float(rec.get("length_mean", 0))
-        length_sd = float(rec["length_stdev"]) if rec.get("length_stdev") is not None else None
-        gc_mean = float(rec.get("gc_mean", 0))
-        gc_sd = float(rec["gc_stdev"]) if rec.get("gc_stdev") is not None else None
-        n_samples = int(rec.get("n", 0))
 
-        # Estimate sequencing depth
-        total_bases = data.get('total_bases_after_filtering', 0)
-        if length_mean > 0:
-            result['estimated_depth'] = int(round(float(total_bases) / float(length_mean)))
-        else:
-            result['estimated_depth'] = 0
-
-        # Only calculate z-scores if sufficient reference samples
+        if not ncbi_rec:
+            continue
+        n_samples = int(ncbi_rec.get('n', 0))
         if n_samples < min_n:
-            logging.warning(f"Insufficient reference samples to calculate z-scores (n={n_samples}, min={min_n})")
-            return result
-    
-        # Calculate z-scores
-        if 'denovo_length' not in data:
+            logging.warning(f"Insufficient NCBI genomes for the {metric} range (n={n_samples}, min={min_n})")
             continue
+        rng = parse_range(ncbi_rec.get(key))
+        if rng:
+            ranges[metric] = {'range': rng, 'source': 'ncbi'}
+        else:
+            logging.warning(f"NCBI stats have no '{key}'; regenerate them with make_ncbi_stats.py")
 
-        assembly_length = float(data.get('denovo_length', 0))
-        assembly_gc = float(data.get('denovo_gc', 0))
-        
-        result['denovo_length_z'] = calculate_z_score(
-            assembly_length, length_mean, length_sd
-        )
-        result['denovo_gc_z'] = calculate_z_score(
-            assembly_gc, gc_mean, gc_sd
-        )
+    for metric, r in ranges.items():
+        logging.info(f"{metric} range {r['range']} from {r['source']}")
+    return ranges
 
-        logging.info(f"Calculated z-scores using {n_samples} reference genomes")
-        break
 
-    return result
+def estimate_depth(
+    data: Dict[str, Any],
+    ncbi_rec: Optional[Dict[str, Any]],
+    ranges: Dict[str, Dict[str, Any]]
+) -> Optional[int]:
+    """
+    Estimated sequencing depth: filtered bases / expected genome length. The
+    expected length is the NCBI mean length, or the midpoint of the manifest
+    length range for species without NCBI data. None if neither is available.
+    """
+    genome_length = float(ncbi_rec.get('length_mean') or 0) if ncbi_rec else 0
+    if genome_length <= 0 and ranges.get('length', {}).get('source') == 'manifest':
+        low, high = ranges['length']['range']
+        genome_length = (low + high) / 2
+    if genome_length <= 0:
+        return None
+    total_bases = float(data.get('total_bases_after_filtering') or 0)
+    return int(round(total_bases / genome_length))
+
+
+def format_range(rng: tuple, digits: int) -> str:
+    """Format (min, max) as 'min-max'."""
+    return f"{rng[0]:.{digits}f}-{rng[1]:.{digits}f}"
+
+
+def describe_sources(ranges: Dict[str, Dict[str, Any]]) -> str:
+    """e.g. 'manifest', or 'length: manifest; gc: ncbi' when they differ."""
+    sources = {m: r['source'] for m, r in ranges.items()}
+    if not sources:
+        return ''
+    if len(set(sources.values())) == 1 and len(sources) == 2:
+        return next(iter(sources.values()))
+    return '; '.join(f"{m}: {src}" for m, src in sources.items())
 
 
 def parse_read_stats(stats_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -234,24 +286,23 @@ def perform_auto_qc(
     data: Dict[str, Any],
     min_depth: int,
     min_qual: float,
-    max_z: float
+    ranges: Dict[str, Dict[str, Any]]
 ) -> Dict[str, Any]:
     """
     Perform automated quality control checks.
-    
+
     Checks:
     - Species identified
     - Subtype identified
     - Q30 rate >= threshold
     - Read depth >= threshold
-    - Assembly length z-score < threshold (if available)
-    - GC content z-score < threshold (if available)
+    - Assembly length within the species' range (if available)
+    - Assembly GC content within the species' range (if available)
     """
     qc_status = 'PASS'
     qc_und: List[str] = []
     qc_fail: List[str] = []
     qc_error: List[str] = []
-
 
     # Define QC criteria (field: (operator, threshold) or None for required)
     qc_criteria = {
@@ -259,19 +310,17 @@ def perform_auto_qc(
         'species': None,
         'subtype': None,
         'estimated_depth': ('>=', min_depth),
-        'denovo_length_z': ('<', max_z),
-        'denovo_gc_z': ('<', max_z)
     }
-    
+
+    missing_required = False
     for field, criterion in qc_criteria.items():
         value = data.get(field)
 
-        # Check if field exists
+        # Missing required fields fail QC and stop further checks
         if value is None:
             qc_und.append(field)
-            if field.startswith('denovo'):
-                continue
             qc_status = 'FAIL'
+            missing_required = True
             break
 
         # If no criterion specified, just check for presence
@@ -281,35 +330,48 @@ def perform_auto_qc(
         # Compare against threshold
         try:
             operator, threshold = criterion
-            label = field
-
-            # For z-scores, check absolute value
-            if field.endswith('_z'):
-                value = abs(value)
-                label = f"|{field}|"
-
             if not compare_values(value, operator, threshold):
                 qc_status = 'FAIL'
                 observed = round(value, 2) if isinstance(value, float) else value
-                qc_fail.append(f"{label} = {observed} (required {operator} {threshold})")
+                qc_fail.append(f"{field} = {observed} (required {operator} {threshold})")
         except Exception as e:
             qc_status = 'FAIL'
             qc_error.append(field)
             logging.error(f"QC comparison failed for {field}: {e}")
-    
-    qc_reasons = [ 
-        f"Undetermined: {', '.join(qc_und)}" if qc_und else '', 
-        f"Failure: {', '.join(qc_fail)}" if qc_fail else '', 
+
+    # Assembly length / GC must fall within the species' range. A missing
+    # assembly or range is reported as undetermined but does not fail QC.
+    if not missing_required:
+        for metric, field, digits in (('length', 'denovo_length', 0), ('gc', 'denovo_gc', 2)):
+            value = data.get(field)
+            rng = ranges.get(metric, {}).get('range')
+            if value is None or rng is None:
+                qc_und.append(f"{field}_range" if value is not None else field)
+                continue
+            try:
+                low, high = rng
+                if not low <= float(value) <= high:
+                    qc_status = 'FAIL'
+                    observed = round(value, 2) if isinstance(value, float) else value
+                    qc_fail.append(f"{field} = {observed} (required {format_range(rng, digits)})")
+            except Exception as e:
+                qc_status = 'FAIL'
+                qc_error.append(field)
+                logging.error(f"QC comparison failed for {field}: {e}")
+
+    qc_reasons = [
+        f"Undetermined: {', '.join(qc_und)}" if qc_und else '',
+        f"Failure: {', '.join(qc_fail)}" if qc_fail else '',
         f"Error: {', '.join(qc_error)}" if qc_error else ''
     ]
 
     data['qc_status'] = qc_status
     data['qc_reason'] = '; '.join([r for r in qc_reasons if r])
-    
+
     logging.info(f"QC Status: {data['qc_status']}")
-    if qc_reasons:
+    if data['qc_reason']:
         logging.info(f"QC Reasons: {data['qc_reason']}")
-    
+
     return data
 
 
@@ -319,7 +381,7 @@ def perform_auto_qc(
 
 def main():
     """Main workflow summarization function."""
-    VERSION = "1.2"
+    VERSION = "1.3"
 
     parser = argparse.ArgumentParser(
         description="Summarize outputs from bioinformatics workflows",
@@ -334,7 +396,10 @@ def main():
     
     # Optional input files
     parser.add_argument("--ncbi_stats",
-                        help="NCBI reference statistics CSV")
+                        help="NCBI species statistics (JSON, from make_ncbi_stats.py)")
+    parser.add_argument("--reference_qc",
+                        help="Species QC ranges from the reference manifest (JSON); "
+                             "used instead of the NCBI ranges where set")
     parser.add_argument("--read_stats",
                         help="Fastp summary output (JSON)")
     parser.add_argument("--species",
@@ -346,13 +411,11 @@ def main():
     
     # QC parameters
     parser.add_argument("--min_ncbi_stats_n", type=int, default=3,
-                        help="Minimum samples in NCBI stats for z-score calculation")
+                        help="Minimum NCBI genomes for the NCBI length / GC ranges to be used")
     parser.add_argument("--min_depth", type=int, default=30,
                         help="Minimum read depth for QC pass")
     parser.add_argument("--min_qual", type=float, default=0.8,
                         help="Minimum Q30 rate for QC pass")
-    parser.add_argument("--max_z_score", type=float, default=2.58,
-                        help="Maximum absolute z-score for QC pass")
     
     # Logging options
     parser.add_argument("--log-level",
@@ -430,22 +493,30 @@ def main():
     else:
         logging.warning("No read statistics provided")
 
-    # Calculate z-scores using NCBI reference data
+    # Expected assembly length / GC ranges (manifest over NCBI) and depth
+    ref_rec = None
+    if args.reference_qc:
+        ref_rec = find_reference_record(load_json(args.reference_qc, 'reference_qc'), data.get('species'))
+
+    ncbi_rec = None
     if args.ncbi_stats:
-        logging.info("Calculating z-scores from NCBI reference statistics")
-        ncbi_stats_data = load_json(args.ncbi_stats, 'ncbi_stats')
-        taxid_stats_data = calculate_taxid_stats(
-            data, ncbi_stats_data, taxid, args.min_ncbi_stats_n
-        )
-        if taxid_stats_data:
-            data.update(taxid_stats_data)
-        else:
-            logging.warning("Could not calculate NCBI-based statistics")
+        aliases = ref_rec.get('species', []) if ref_rec else []
+        ncbi_rec = find_ncbi_record(load_json(args.ncbi_stats, 'ncbi_stats'), taxid, data.get('species'), aliases)
+        if not ncbi_rec:
+            logging.warning("Species not found in NCBI statistics")
     else:
-        logging.warning("NCBI reference statistics not provided")
+        logging.warning("NCBI statistics not provided")
+
+    ranges = resolve_qc_ranges(ncbi_rec, ref_rec, args.min_ncbi_stats_n)
+    data['estimated_depth'] = estimate_depth(data, ncbi_rec, ranges)
+    if 'length' in ranges:
+        data['denovo_length_range'] = format_range(ranges['length']['range'], 0)
+    if 'gc' in ranges:
+        data['denovo_gc_range'] = format_range(ranges['gc']['range'], 2)
+    data['qc_range_source'] = describe_sources(ranges)
 
     # Perform automated QC
-    data = perform_auto_qc(data, args.min_depth, args.min_qual, args.max_z_score)
+    data = perform_auto_qc(data, args.min_depth, args.min_qual, ranges)
 
     # Format output values
     for key, value in list(data.items()):
@@ -471,9 +542,10 @@ def main():
         'estimated_depth',
         'denovo_contigs',
         'denovo_length',
-        'denovo_length_z',
+        'denovo_length_range',
         'denovo_gc',
-        'denovo_gc_z',
+        'denovo_gc_range',
+        'qc_range_source',
         'total_reads_after_filtering',
         'total_bases_after_filtering',
         'q30_bases_after_filtering',

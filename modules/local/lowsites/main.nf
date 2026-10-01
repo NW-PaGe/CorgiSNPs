@@ -13,11 +13,12 @@ process LOWSITES {
     script:
     def args = task.ext.args ?: '' 
     def prefix = task.ext.prefix ?: "${meta.id}"
+    def cfg    = meta.settings ?: params
     tool = 'lowsites'
     """
     ${tool} \\
-        -t ${params.min_base_quality} \\
-        -d ${params.min_base_depth} \\
+        -t ${cfg.min_base_quality} \\
+        -d ${cfg.min_base_depth} \\
         -o ${prefix}.mask.bed \\
         ${pileup}
 

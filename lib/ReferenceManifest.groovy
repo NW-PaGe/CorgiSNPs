@@ -35,6 +35,22 @@
 // than one, marking one without 'amr', or leaving several 'amr' subtypes with
 // none marked is an error.
 //
+// Settings: the variant calling and phylogenetic parameters in SETTINGS can be
+// set on a species entry, a subtype, or both, using the same name as the
+// pipeline parameter. They are validated, removed from the flat record and
+// collected into 'settings' (species values, then subtype values on top).
+// resolveSettings() fills in the pipeline parameters (the run level) for
+// anything the record doesn't set, so the most specific level wins:
+//
+//   subtype  >  species  >  run (--param / params file / config)
+//
+// QC ranges: a species entry can set 'length_range' (bp) and 'gc_range' (%),
+// each [min, max], for automated QC of de novo assemblies. They are species
+// level only, validated, and collected into 'qc_ranges' on each record.
+// qcRanges() lists every species (names, aliases and any QC ranges) for the
+// SUMMARYLINE process, where the ranges are used instead of the NCBI-derived
+// ones and the aliases help find the species in the NCBI stats.
+//
 // When validation fails, records is empty and errors lists every problem found.
 //
 
@@ -51,6 +67,34 @@ class ReferenceManifest {
 
     // Allowed characters for an entry's name, since it is used as a directory name
     static final String NAME_PATTERN = '^[A-Za-z0-9._-]+$'
+
+    // Parameters that a species or subtype can override, with the type and range
+    // each must have. Names and types match nextflow_schema.json.
+    static final Map<String, Map> VARIANT_SETTINGS = [
+        limit_coverage          : [ type: 'integer', min: 1 ],
+        min_base_depth          : [ type: 'integer', min: 0 ],
+        min_base_quality        : [ type: 'integer', min: 0 ],
+        min_mapping_quality     : [ type: 'integer', min: 0 ],
+        min_allele_fraction     : [ type: 'number',  min: 0, max: 1 ],
+        min_fwd_strand_fraction : [ type: 'number',  min: 0, max: 1 ],
+        max_strand_bias         : [ type: 'integer', min: 0 ],
+        max_read_pos_bias       : [ type: 'integer', min: 0 ],
+    ]
+    static final Map<String, Map> PHYLO_SETTINGS = [
+        min_genome_fraction     : [ type: 'number',  min: 0, max: 1 ],
+        min_core_fraction       : [ type: 'number',  min: 0, max: 1 ],
+        strong_link_threshold   : [ type: 'integer', min: 0 ],
+        inter_link_threshold    : [ type: 'integer', min: 0 ],
+        partition_distance      : [ type: 'integer', min: 0 ],
+    ]
+    static final Map<String, Map> SETTINGS = VARIANT_SETTINGS + PHYLO_SETTINGS
+
+    // Expected de novo assembly length (bp) and GC (%) for automated QC, as
+    // [min, max]. Species level only. Names match the NCBI stats file.
+    static final Map<String, Map> QC_RANGES = [
+        length_range : [ min: 0 ],
+        gc_range     : [ min: 0, max: 100 ],
+    ]
 
     static Map load(dir, boolean validate = true) {
         Path root = Nextflow.file(dir.toString()) as Path
@@ -101,6 +145,10 @@ class ReferenceManifest {
 
             Path speciesDir = name ? root.resolve(name) : root
 
+            // Species-level settings, shared by every subtype
+            Map speciesSettings = readSettings(entry, label, validate ? errors : null)
+            Map speciesQc       = readQcRanges(entry, label, validate ? errors : null)
+
             // Subtype name -> position where it was first used, for the uniqueness check
             Map seen = [:]
             int first = records.size()
@@ -140,8 +188,18 @@ class ReferenceManifest {
                     files[field] = found
                 }
 
+                // Subtype-level settings override the species' values
+                Map settings = speciesSettings + readSettings(st, stLabel, validate ? errors : null)
+
+                // QC ranges are species level only
+                if( validate )
+                    QC_RANGES.keySet().findAll { k -> st.containsKey(k) }.each { k ->
+                        errors << "${stLabel}: '${k}' can only be set on the species entry"
+                    }
+
                 def shared = entry.findAll { k, v -> k != 'subtypes' }
-                records << shared + st + files + [ name: name, species: species, subtype: names, reference: files.assembly ]
+                def fields = (shared + st).findAll { k, v -> !SETTINGS.containsKey(k) && !QC_RANGES.containsKey(k) }
+                records << fields + files + [ name: name, species: species, subtype: names, reference: files.assembly, settings: settings, qc_ranges: speciesQc ]
             }
 
             // AMR checks and primary selection for this species
@@ -174,6 +232,99 @@ class ReferenceManifest {
         }
 
         return errors ? result([], errors) : result(records, [])
+    }
+
+    //
+    // Settings set directly on a species entry or subtype, converted to their
+    // types. Invalid values are reported to 'errors' (when given) and left out.
+    //
+    static Map readSettings(Map source, String label, List errors) {
+        Map out = [:]
+        SETTINGS.each { key, spec ->
+            if( !source.containsKey(key) )
+                return
+            def value = source[key]
+            def problem = settingProblem(value, spec)
+            if( problem ) {
+                errors?.add("${label}: '${key}' ${problem}, got '${value}'".toString())
+                return
+            }
+            out[key] = spec.type == 'integer' ? ((Number) value).toBigDecimal().intValueExact() : value
+        }
+        return out
+    }
+
+    //
+    // QC ranges set on a species entry, as [min, max] number lists. Invalid
+    // values are reported to 'errors' (when given) and left out.
+    //
+    static Map readQcRanges(Map source, String label, List errors) {
+        Map out = [:]
+        QC_RANGES.each { key, spec ->
+            if( !source.containsKey(key) )
+                return
+            def value = source[key]
+            def bounds = spec.max != null ? "from ${spec.min} to ${spec.max}" : "of at least ${spec.min}"
+            def ok = value instanceof List && value.size() == 2 && value.every { v -> v instanceof Number }
+            if( ok ) {
+                def (lo, hi) = value.collect { v -> ((Number) v).toBigDecimal() }
+                ok = lo <= hi && lo >= spec.min && (spec.max == null || hi <= spec.max)
+            }
+            if( !ok ) {
+                errors?.add("${label}: '${key}' must be [min, max] with min <= max, both ${bounds}, got '${value}'".toString())
+                return
+            }
+            out[key] = value
+        }
+        return out
+    }
+
+    //
+    // Species QC info for SUMMARYLINE: one entry per species with its names
+    // (so samples can be matched by name or alias) and any QC ranges it sets.
+    //
+    static List<Map> qcRanges(List<Map> records) {
+        // unique(false): return a new list; unique() would drop the other
+        // subtypes of each species from 'records' itself
+        return records
+            .unique(false) { r -> r.name }
+            .collect { r -> [ name: r.name, species: r.species ] + r.qc_ranges }
+    }
+
+    static String settingProblem(value, Map spec) {
+        def kind = spec.type == 'integer' ? 'a whole number' : 'a number'
+        def range = spec.max != null ? "${kind} from ${spec.min} to ${spec.max}" : "${kind} of at least ${spec.min}"
+        if( !(value instanceof Number) )
+            return "must be ${range}"
+        def n = ((Number) value).toBigDecimal()
+        if( spec.type == 'integer' && n.stripTrailingZeros().scale() > 0 )
+            return "must be ${range}"
+        if( (spec.min != null && n < spec.min) || (spec.max != null && n > spec.max) )
+            return "must be ${range}"
+        return null
+    }
+
+    //
+    // Effective settings for a record: its own species/subtype settings, with
+    // the pipeline parameters (the run level) for anything it doesn't set.
+    // Pass [:] for a sample with no manifest record (e.g. a reference supplied
+    // in the samplesheet) to get the run-level values.
+    //
+    static Map resolveSettings(Map settings, params) {
+        return SETTINGS.keySet().collectEntries { k ->
+            [ (k): settings?.containsKey(k) ? settings[k] : params[k] ]
+        }
+    }
+
+    //
+    // One line per subtype whose settings differ from the run-level values,
+    // e.g. 'candidozyma_auris / Clade I: min_allele_fraction=0.9 (run: 0.8)'
+    //
+    static List<String> describeOverrides(List<Map> records, params) {
+        return records.findResults { r ->
+            def diffs = (r.settings ?: [:]).findAll { k, v -> v != params[k] }
+            diffs ? "${r.name} / ${r.subtype[0]}: " + diffs.collect { k, v -> "${k}=${v} (run: ${params[k]})" }.join(', ') : null
+        }*.toString()
     }
 
     //
@@ -210,7 +361,10 @@ class ReferenceManifest {
         return items.findAll { it != null }.collect { it.toString().trim() }.findAll { it }
     }
 
+    // Records are returned read-only: they are shared by every consumer of the
+    // manifest (e.g. the reference channel), so an in-place change would
+    // silently affect them all. Copy the list before modifying it.
     static Map result(List records, List errors) {
-        return [ records: records, errors: errors.collect { it.toString() } ]
+        return [ records: Collections.unmodifiableList(records), errors: errors.collect { it.toString() } ]
     }
 }
