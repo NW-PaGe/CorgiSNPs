@@ -44,6 +44,13 @@
 //
 //   subtype  >  species  >  run (--param / params file / config)
 //
+// QC ranges: a species entry can set 'length_range' (bp) and 'gc_range' (%),
+// each [min, max], for automated QC of de novo assemblies. They are species
+// level only, validated, and collected into 'qc_ranges' on each record.
+// qcRanges() lists every species (names, aliases and any QC ranges) for the
+// SUMMARYLINE process, where the ranges are used instead of the NCBI-derived
+// ones and the aliases help find the species in the NCBI stats.
+//
 // When validation fails, records is empty and errors lists every problem found.
 //
 
@@ -81,6 +88,13 @@ class ReferenceManifest {
         partition_distance      : [ type: 'integer', min: 0 ],
     ]
     static final Map<String, Map> SETTINGS = VARIANT_SETTINGS + PHYLO_SETTINGS
+
+    // Expected de novo assembly length (bp) and GC (%) for automated QC, as
+    // [min, max]. Species level only. Names match the NCBI stats file.
+    static final Map<String, Map> QC_RANGES = [
+        length_range : [ min: 0 ],
+        gc_range     : [ min: 0, max: 100 ],
+    ]
 
     static Map load(dir, boolean validate = true) {
         Path root = Nextflow.file(dir.toString()) as Path
@@ -133,6 +147,7 @@ class ReferenceManifest {
 
             // Species-level settings, shared by every subtype
             Map speciesSettings = readSettings(entry, label, validate ? errors : null)
+            Map speciesQc       = readQcRanges(entry, label, validate ? errors : null)
 
             // Subtype name -> position where it was first used, for the uniqueness check
             Map seen = [:]
@@ -176,9 +191,15 @@ class ReferenceManifest {
                 // Subtype-level settings override the species' values
                 Map settings = speciesSettings + readSettings(st, stLabel, validate ? errors : null)
 
+                // QC ranges are species level only
+                if( validate )
+                    QC_RANGES.keySet().findAll { k -> st.containsKey(k) }.each { k ->
+                        errors << "${stLabel}: '${k}' can only be set on the species entry"
+                    }
+
                 def shared = entry.findAll { k, v -> k != 'subtypes' }
-                def fields = (shared + st).findAll { k, v -> !SETTINGS.containsKey(k) }
-                records << fields + files + [ name: name, species: species, subtype: names, reference: files.assembly, settings: settings ]
+                def fields = (shared + st).findAll { k, v -> !SETTINGS.containsKey(k) && !QC_RANGES.containsKey(k) }
+                records << fields + files + [ name: name, species: species, subtype: names, reference: files.assembly, settings: settings, qc_ranges: speciesQc ]
             }
 
             // AMR checks and primary selection for this species
@@ -231,6 +252,43 @@ class ReferenceManifest {
             out[key] = spec.type == 'integer' ? ((Number) value).toBigDecimal().intValueExact() : value
         }
         return out
+    }
+
+    //
+    // QC ranges set on a species entry, as [min, max] number lists. Invalid
+    // values are reported to 'errors' (when given) and left out.
+    //
+    static Map readQcRanges(Map source, String label, List errors) {
+        Map out = [:]
+        QC_RANGES.each { key, spec ->
+            if( !source.containsKey(key) )
+                return
+            def value = source[key]
+            def bounds = spec.max != null ? "from ${spec.min} to ${spec.max}" : "of at least ${spec.min}"
+            def ok = value instanceof List && value.size() == 2 && value.every { v -> v instanceof Number }
+            if( ok ) {
+                def (lo, hi) = value.collect { v -> ((Number) v).toBigDecimal() }
+                ok = lo <= hi && lo >= spec.min && (spec.max == null || hi <= spec.max)
+            }
+            if( !ok ) {
+                errors?.add("${label}: '${key}' must be [min, max] with min <= max, both ${bounds}, got '${value}'".toString())
+                return
+            }
+            out[key] = value
+        }
+        return out
+    }
+
+    //
+    // Species QC info for SUMMARYLINE: one entry per species with its names
+    // (so samples can be matched by name or alias) and any QC ranges it sets.
+    //
+    static List<Map> qcRanges(List<Map> records) {
+        // unique(false): return a new list; unique() would drop the other
+        // subtypes of each species from 'records' itself
+        return records
+            .unique(false) { r -> r.name }
+            .collect { r -> [ name: r.name, species: r.species ] + r.qc_ranges }
     }
 
     static String settingProblem(value, Map spec) {
@@ -303,7 +361,10 @@ class ReferenceManifest {
         return items.findAll { it != null }.collect { it.toString().trim() }.findAll { it }
     }
 
+    // Records are returned read-only: they are shared by every consumer of the
+    // manifest (e.g. the reference channel), so an in-place change would
+    // silently affect them all. Copy the list before modifying it.
     static Map result(List records, List errors) {
-        return [ records: records, errors: errors.collect { it.toString() } ]
+        return [ records: Collections.unmodifiableList(records), errors: errors.collect { it.toString() } ]
     }
 }

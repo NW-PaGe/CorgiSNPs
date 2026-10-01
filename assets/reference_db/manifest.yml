@@ -19,6 +19,10 @@
 #   species       required  Species names. The first is preferred; the rest are aliases.
 #   ploidy        optional  Used for variant calling.
 #   subtype_ani   optional  ANI threshold for subtyping: fraction (0.997)
+#   length_range  optional  Acceptable de novo assembly length for automated QC, in bp:
+#                           [min, max]. Species level only.
+#   gc_range      optional  Acceptable de novo assembly GC content for automated QC, in %:
+#                           [min, max]. Species level only.
 #   subtypes      required  One entry per subtype (below).
 #
 # Subtype fields
@@ -36,6 +40,14 @@
 #   primary       optional  true for the subtype whose AMR targets are used for samples on
 #                           subtypes without `amr`. Only needed when more than one subtype
 #                           has `amr`; a single `amr` subtype is primary automatically.
+#
+# Automated QC ranges
+#   A sample fails QC if its de novo assembly length or GC content falls outside
+#   its species' range. `length_range` and `gc_range` are used when set here;
+#   otherwise the range comes from the NCBI statistics (--ncbi_stats), each
+#   metric separately. If neither has a range, the check is reported as
+#   undetermined and does not fail the sample. The NCBI file's `length_range` and
+#   `gc_range` for a species are a starting point for these values.
 #
 # Analysis settings (optional; species and/or subtype level)
 #   Any of these pipeline parameters can be set on a species entry or a subtype,
@@ -68,6 +80,8 @@
 #     - Genus species
 #   ploidy: 1
 #   subtype_ani: 0.997
+#   length_range: [11000000, 13000000]   # QC: assembly length, bp
+#   gc_range: [40.0, 49.5]               # QC: assembly GC, %
 #   min_allele_fraction: 0.8      # species-level setting (all subtypes)
 #   partition_distance: 25
 #   subtypes:

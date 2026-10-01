@@ -93,7 +93,8 @@ workflow CORGISNPS {
     SUMMARYLINE(
         ch_samples,
         file(params.input),
-        file(params.ncbi_stats)
+        file(params.ncbi_stats),
+        PREPARE.out.qc_ranges.first()   // manifest QC ranges; used over NCBI ranges
     )
     ch_versions = ch_versions.mix(SUMMARYLINE.out.versions.first())
 

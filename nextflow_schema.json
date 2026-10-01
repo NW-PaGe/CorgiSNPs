@@ -110,11 +110,6 @@
                     "type": "number",
                     "default": 0.8,
                     "description": "Min. read Q30 rate post filtering"
-                },
-                "max_z_score_qc": {
-                    "type": "number",
-                    "default": 2.58,
-                    "description": "Max. Z-score for genome assembly size and % GC"
                 }
             }
         },

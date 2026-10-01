@@ -6,6 +6,7 @@ process SUMMARYLINE {
     tuple val(meta), path(read_stats), path(denovo), path(species), path(subtype)
     path(samplesheet)
     path(ncbi_stats)
+    path(reference_qc)
 
     output:
     tuple val(meta), path("*_summary.csv"), emit: summary
@@ -24,9 +25,9 @@ process SUMMARYLINE {
         --sample "${meta.id}" \\
         --samplesheet ${samplesheet} \\
         --ncbi_stats ${ncbi_stats} \\
+        --reference_qc ${reference_qc} \\
         --min_depth ${params.min_depth_qc} \\
         --min_qual ${params.min_q30_rate_qc} \\
-        --max_z_score ${params.max_z_score_qc} \\
         ${args.join(' ')}
 
     # version info

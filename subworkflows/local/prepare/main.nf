@@ -46,6 +46,11 @@ workflow PREPARE {
 
     ch_refs = channel.fromList(ref_db.records)
 
+    // Species names and QC ranges from the manifest, as JSON for SUMMARYLINE
+    ch_qc_ranges = channel
+        .of( groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(ReferenceManifest.qcRanges(ref_db.records))) )
+        .collectFile(name: 'reference_qc_ranges.json', newLine: true)
+
     // -------------------------------------------------------------------------
     // MODULE: Download reads from SRA for rows with an SRA accession
     // Input reshaped to [ meta, sra ]
@@ -148,6 +153,7 @@ workflow PREPARE {
 
     emit:
     refs          = ch_refs
+    qc_ranges     = ch_qc_ranges   // path: reference_qc_ranges.json
     samplesheet   = ch_samplesheet
     read_stats    = FASTP.out.json
     versions      = ch_versions
