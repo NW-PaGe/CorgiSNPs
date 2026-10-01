@@ -23,6 +23,8 @@ process FILTER_VCF {
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
+    // Thresholds from the sample's reference settings (subtype > species > run)
+    def cfg    = meta.settings ?: params
 
     """
     bcftools index -t ${vcf}
@@ -36,17 +38,17 @@ process FILTER_VCF {
     # 4) Tag non-GT alleles
     bcftools filter -Ou -s non_gt_alt -e 'INFO/AC==0' | \\
     # 5) *** AF filter against ALL detected alleles ***
-    bcftools filter -Ou -s low_af -e 'FMT/VAF < ${params.min_allele_fraction}' | \\
+    bcftools filter -Ou -s low_af -e 'FMT/VAF < ${cfg.min_allele_fraction}' | \\
     # 6) Tag low allele depth
-    bcftools filter -Ou -s low_depth -e 'FMT/AO < ${params.min_base_depth}' | \\
+    bcftools filter -Ou -s low_depth -e 'FMT/AO < ${cfg.min_base_depth}' | \\
     # 7) Tag low allele base quality
-    bcftools filter -Ou -s low_base_qual -e '(FMT/AO > 0 && (FMT/QA)/(FMT/AO) <= ${params.min_base_quality})' | \\
+    bcftools filter -Ou -s low_base_qual -e '(FMT/AO > 0 && (FMT/QA)/(FMT/AO) <= ${cfg.min_base_quality})' | \\
     # 8) Tag low allele mapping quality
-    bcftools filter -Ou -s low_map_qual -e 'INFO/MQM < ${params.min_mapping_quality}' | \\
+    bcftools filter -Ou -s low_map_qual -e 'INFO/MQM < ${cfg.min_mapping_quality}' | \\
     # 9) Tag strand bias
-    bcftools filter -Ou -s strand_bias -e '(INFO/SAP >= ${params.max_strand_bias}) || (INFO/SAF+INFO/SAR > 0 && ((INFO/SAF)/(INFO/SAF+INFO/SAR) < ${params.min_fwd_strand_fraction} ))' | \\
+    bcftools filter -Ou -s strand_bias -e '(INFO/SAP >= ${cfg.max_strand_bias}) || (INFO/SAF+INFO/SAR > 0 && ((INFO/SAF)/(INFO/SAF+INFO/SAR) < ${cfg.min_fwd_strand_fraction} ))' | \\
     # 10) Read position bias
-    bcftools filter -Ou -s read_pos_bias -e '(INFO/RPR=0 || INFO/RPL=0) || (INFO/RPP > ${params.max_read_pos_bias})' | \\
+    bcftools filter -Ou -s read_pos_bias -e '(INFO/RPR=0 || INFO/RPL=0) || (INFO/RPP > ${cfg.max_read_pos_bias})' | \\
     # 11) Save to VCF
     bcftools view -Oz -o ${prefix}.tagged.vcf.gz
 

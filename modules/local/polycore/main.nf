@@ -20,6 +20,7 @@ process POLYCORE {
 
     script:
     def args = task.ext.args ?: ''
+    def cfg  = meta.settings ?: params
     prefix = "${meta.species}-${meta.subtype}"
     def origName = ref.getName()
     def stem = origName.replaceAll(/\.gz$/, '').replaceAll(/\.(fna|fa|fasta|fas)$/, '')
@@ -32,8 +33,8 @@ process POLYCORE {
 
     polycore \\
         ${prefixedName} ${assemblies} \\
-        --min-gf ${params.min_genome_fraction} \\
-        --min-cf ${params.min_core_fraction} \\
+        --min-gf ${cfg.min_genome_fraction} \\
+        --min-cf ${cfg.min_core_fraction} \\
         --ploidy ${meta.ploidy} \\
         ${args}
 

@@ -9,6 +9,8 @@ Initial release of NW-PaGe/corgisnps, created with the [nf-core](https://nf-co.r
 
 ### `Added`
 
+- Variant calling and phylogenetic parameters can be set per species or per subtype in the reference database manifest. Precedence is subtype > species > run-level parameter; overrides are validated on load and listed in the log.
+
 ### `Fixed`
 
 ### `Dependencies`

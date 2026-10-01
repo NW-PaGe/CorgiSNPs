@@ -42,6 +42,12 @@ workflow VARIANTS {
     // Samples with a reference supplied in the samplesheet keep it. All others
     // get the reference (and ploidy) whose species and subtype both match.
     // Samples with no matching reference are dropped, as before.
+    //
+    // meta.settings holds the variant calling and phylogenetic parameters for
+    // the sample: the matching record's subtype/species values, falling back
+    // to the run-level params. Samples that already carry settings (e.g. AMR
+    // re-calling against the primary reference) keep them; samples with a
+    // supplied reference and no settings get the run-level params.
     // -------------------------------------------------------------------------
     ch_samplesheet
         .branch { meta, reads ->
@@ -56,8 +62,14 @@ workflow VARIANTS {
             [ meta, reads, refs.find { ref -> matchesName(ref.species, meta.species) && matchesName(ref.subtype, meta.subtype) } ]
         }
         .filter { meta, reads, ref -> ref }
-        .map { meta, reads, ref -> [ meta + [ reference: ref.reference, ploidy: ref.ploidy ], reads ] }
-        .mix( ch_input.supplied )
+        .map { meta, reads, ref ->
+            [ meta + [ reference: ref.reference, ploidy: ref.ploidy, settings: ReferenceManifest.resolveSettings(ref.settings, params) ], reads ]
+        }
+        .mix(
+            ch_input.supplied.map { meta, reads ->
+                [ meta.settings ? meta : meta + [ settings: ReferenceManifest.resolveSettings([:], params) ], reads ]
+            }
+        )
         .set { ch_samplesheet }
 
     // -------------------------------------------------------------------------
@@ -94,6 +106,7 @@ workflow VARIANTS {
 
         // SAMTOOLS mpileup (depth & pileup summaries)
         // mpileup inputs: [ meta, bam, opts ]; opts left as [] to preserve behavior
+        // (max depth comes from meta.settings via ext.args in modules.config)
         SAMTOOLS_MPILEUP(
             ch_mapped.map { meta, bam, bai -> [ meta, bam, [] ] },
             [ null, [] ]

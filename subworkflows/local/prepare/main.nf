@@ -39,6 +39,11 @@ workflow PREPARE {
     if( ref_db.errors )
         error "Invalid reference directory '${params.reference_db}':\n" + ref_db.errors.collect { "  - ${it}" }.join('\n')
 
+    // Report species/subtype settings that differ from the run-level parameters
+    def overrides = ReferenceManifest.describeOverrides(ref_db.records, params)
+    if( overrides )
+        log.info "Reference database settings overriding run parameters:\n" + overrides.collect { "  - ${it}" }.join('\n')
+
     ch_refs = channel.fromList(ref_db.records)
 
     // -------------------------------------------------------------------------

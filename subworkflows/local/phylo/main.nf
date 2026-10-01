@@ -33,14 +33,20 @@ workflow PHYLO {
     // Join alignments with meta, group by (species, subtype), and assemble a
     // sample set consisting of current alignments plus any cached consensus
     // sequences from params.db not already present in the current set.
+    //
+    // Groups are keyed on species/subtype/reference/ploidy only, so samples
+    // with different settings for the same reference still end up in one
+    // tree. The group's phylo settings are those its samples agree on; if
+    // they disagree, the run-level params are used, with a warning.
     // -------------------------------------------------------------------------
     ch_sp_sb = ch_aln
         .map{ meta, aln ->
-            def new_meta = [species: meta.species, subtype: meta.subtype, reference: meta.reference, ploidy: meta.ploidy]
-            return [new_meta , aln]  
+            def key = [species: meta.species, subtype: meta.subtype, reference: meta.reference, ploidy: meta.ploidy]
+            return [key, meta.settings ?: [:], aln]
         }
         .groupTuple(by: 0)
-        .map { meta, alns ->
+        .map { key, settings, alns ->
+            def meta = key + [ settings: groupSettings(key, settings) ]
             // Current sample names (filenames) from the alignment paths
             def current = alns.collect { it.getName() }
 
@@ -92,4 +98,26 @@ workflow PHYLO {
     tree        = IQTREE.out.tree
     dist        = POLYCORE.out.dist_wide
     versions    = ch_versions
+}
+
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    FUNCTIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+//
+// Phylogenetic settings for a species/subtype group, from its samples'
+// meta.settings. Only phylo settings are kept (variant calling settings are
+// per sample), so the group meta is the same however the samples arrive.
+// If the samples disagree, the run-level params are used.
+//
+def groupSettings(key, List settings) {
+    def phyloKeys = ReferenceManifest.PHYLO_SETTINGS.keySet()
+    def distinct  = settings.collect { s -> s.subMap(phyloKeys) }.unique()
+    if( distinct.size() > 1 )
+        log.warn "${key.species} ${key.subtype}: samples have different phylogenetic settings; using the run-level parameters for this group"
+    def chosen = distinct.size() == 1 ? distinct[0] : [:]
+    return ReferenceManifest.resolveSettings(chosen, params).subMap(phyloKeys)
 }

@@ -11,6 +11,9 @@ import datetime
 
 URL = "https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/eukaryotes.txt"
 
+# Acceptable range = mean +/- Z_SCORE * stdev (2.58 ~ 99% of a normal distribution)
+Z_SCORE = 2.58
+
 
 def download(url, dest):
     """Download a file from URL to destination path."""
@@ -32,6 +35,25 @@ def parse_float(val):
         return float(val.strip())
     except ValueError:
         return None
+
+
+def summarize(values, lower=None, upper=None):
+    """
+    Mean, standard deviation and acceptable range (mean +/- Z_SCORE * stdev)
+    of a list of values. The range is clipped to [lower, upper] when given.
+    Returns None if the stdev can't be calculated (fewer than 2 values).
+    """
+    if len(values) < 2:
+        return None
+    mean = statistics.mean(values)
+    stdev = statistics.stdev(values)
+    low = mean - Z_SCORE * stdev
+    high = mean + Z_SCORE * stdev
+    if lower is not None:
+        low = max(low, lower)
+    if upper is not None:
+        high = min(high, upper)
+    return {"mean": mean, "stdev": stdev, "range": [low, high]}
 
 
 def pull_taxids(taxids_file="taxids.txt", json_out="taxid_species.json"):
@@ -186,19 +208,25 @@ def main():
     # Calculate statistics for each species
     print("Calculating statistics...")
     species_stats = []
+    skipped = 0
     for species_taxid, data in final_map.items():
         # Filter out None values
         lengths = [float(l) * 10**6 for l in data['length'] if l is not None]
         gcs = [float(g) for g in data['gc'] if g is not None]
         
-        # Skip if no valid data
-        if not lengths or not gcs:
+        # Mean, stdev and range; None if fewer than 2 values
+        length = summarize(lengths, lower=0)
+        gc = summarize(gcs, lower=0, upper=100)
+
+        # Keep only species where both ranges could be determined
+        if length is None or gc is None:
+            skipped += 1
             continue
-        
+
         # Get unique names and taxids
         unique_names = sorted(set([n for n in data['names'] if n]))
         unique_taxids = sorted(set(data['taxids']))
-        
+
         # Calculate stats
         stats = {
             'species_name': data['species_name'],
@@ -206,10 +234,13 @@ def main():
             'taxids': unique_taxids,
             'names': unique_names,
             'n': len(lengths),
-            'length_mean': statistics.mean(lengths),
-            'length_stdev': statistics.stdev(lengths) if len(lengths) > 1 else None,
-            'gc_mean': statistics.mean(gcs),
-            'gc_stdev': statistics.stdev(gcs) if len(gcs) > 1 else None
+            'z_score': Z_SCORE,
+            'length_mean': length['mean'],
+            'length_stdev': length['stdev'],
+            'length_range': length['range'],
+            'gc_mean': gc['mean'],
+            'gc_stdev': gc['stdev'],
+            'gc_range': gc['range']
         }
         species_stats.append(stats)
     
@@ -217,13 +248,13 @@ def main():
     species_stats.sort(key=lambda x: x['species_name'])
     
     # Write output JSON
-    output_file = f"{__import__('datetime').date.today().isoformat()}_fungi_species_stats.json"
     timestamp = datetime.date.today().isoformat()
     output_file = f'{timestamp}_ncbi-fungal-sp.json'
     with open(output_file, 'w') as f:
         json.dump(species_stats, f, indent=2)
     
     print(f"Wrote statistics for {len(species_stats)} species to {output_file}")
+    print(f"Skipped {skipped} species with fewer than 2 genomes with length and GC data")
 
 
 if __name__ == "__main__":

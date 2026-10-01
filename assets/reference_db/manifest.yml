@@ -37,6 +37,25 @@
 #                           subtypes without `amr`. Only needed when more than one subtype
 #                           has `amr`; a single `amr` subtype is primary automatically.
 #
+# Analysis settings (optional; species and/or subtype level)
+#   Any of these pipeline parameters can be set on a species entry or a subtype,
+#   using the same name as the parameter. The most specific level wins:
+#
+#     subtype  >  species  >  run (--param on the command line, params file, config)
+#
+#   so a run-level value only applies to species/subtypes that don't set their
+#   own. Values are checked when the manifest is loaded, and the ones that differ
+#   from the run are listed in the log at startup.
+#
+#   Variant calling   limit_coverage, min_base_depth, min_base_quality,
+#                     min_mapping_quality, min_allele_fraction,
+#                     min_fwd_strand_fraction, max_strand_bias, max_read_pos_bias
+#   Phylogenetics     min_genome_fraction, min_core_fraction, strong_link_threshold,
+#                     inter_link_threshold, partition_distance
+#
+#   Samples with a reference supplied in the samplesheet use the run-level values.
+#   All samples in one tree (species + subtype) share its phylogenetic settings.
+#
 # Any other field is passed through to the pipeline unchanged.
 #
 # ------------------------------------------------------------------------------
@@ -49,10 +68,13 @@
 #     - Genus species
 #   ploidy: 1
 #   subtype_ani: 0.997
+#   min_allele_fraction: 0.8      # species-level setting (all subtypes)
+#   partition_distance: 25
 #   subtypes:
 #     - subtype: [Subtype A]
 #       assembly: GCA_000000000.1.fna.gz
 #       annotation: GCA_000000000.1.gff.gz
+#       min_core_fraction: 0.95   # subtype-level setting (this subtype only)
 #       primary: true
 #       amr:
 #         - chrom: CONTIG_ID
@@ -71,6 +93,21 @@
     - Candida auris
   ploidy: 1
   subtype_ani: 0.997
+  # Variant calling
+  limit_coverage: 100
+  min_base_depth: 10
+  min_base_quality: 30
+  min_mapping_quality: 40
+  min_allele_fraction: 0.8
+  min_fwd_strand_fraction: 0.3
+  max_strand_bias: 15
+  max_read_pos_bias: 30
+  # Phylogenetics
+  min_genome_fraction: 0.9
+  min_core_fraction: 0.9
+  strong_link_threshold: 5
+  inter_link_threshold: 10
+  partition_distance: 25
   subtypes:
     - subtype: [Clade I]
       assembly: GCA_016772135.1.fna.gz

@@ -202,42 +202,50 @@
                 "limit_coverage": {
                     "type": "integer",
                     "default": 100,
-                    "description": "Max. allowed site coverage (to avoid bias)"
+                    "description": "Max. allowed site coverage (to avoid bias)",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "min_base_depth": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Min. read depth per allele/site"
+                    "description": "Min. read depth per allele/site",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "min_base_quality": {
                     "type": "integer",
                     "default": 30,
-                    "description": "Min. mean base quality (Phred) per allele/site"
+                    "description": "Min. mean base quality (Phred) per allele/site",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "min_mapping_quality": {
                     "type": "integer",
                     "default": 40,
-                    "description": "Min. mean mapping quality (Phred) per allele"
+                    "description": "Min. mean mapping quality (Phred) per allele",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "min_allele_fraction": {
                     "type": "number",
                     "default": 0.8,
-                    "description": "Min. fraction of reads supporting an allele (haploid: 0.8, diploid/triploid: 0.25)"
+                    "description": "Min. fraction of reads supporting an allele (haploid: 0.8, diploid/triploid: 0.25)",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "min_fwd_strand_fraction": {
                     "type": "number",
                     "default": 0.3,
-                    "description": "Min. forward-strand fraction for strand balance"
+                    "description": "Min. forward-strand fraction for strand balance",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "max_strand_bias": {
                     "type": "integer",
                     "default": 15,
-                    "description": "Max. strand bias score"
+                    "description": "Max. strand bias score",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "max_read_pos_bias": {
                     "type": "integer",
                     "default": 30,
-                    "description": "Max. read position bias score"
+                    "description": "Max. read position bias score",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 }
             }
         },
@@ -250,27 +258,32 @@
                 "min_genome_fraction": {
                     "type": "number",
                     "default": 0.9,
-                    "description": "Min. genome fraction for a sample to be included in the core analysis"
+                    "description": "Min. genome fraction for a sample to be included in the core analysis",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "min_core_fraction": {
                     "type": "number",
                     "default": 0.9,
-                    "description": "Min. population fraction for a site to be included in the core analysis"
+                    "description": "Min. population fraction for a site to be included in the core analysis",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "strong_link_threshold": {
                     "type": "integer",
                     "default": 5,
-                    "description": "Threshold for defining strong links between samples"
+                    "description": "Threshold for defining strong links between samples",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "inter_link_threshold": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Threshold for defining intermediate links between samples"
+                    "description": "Threshold for defining intermediate links between samples",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 },
                 "partition_distance": {
                     "type": "integer",
                     "default": 25,
-                    "description": "Max. distance for partitioning clusters"
+                    "description": "Max. distance for partitioning clusters",
+                    "help_text": "Run-level default. Can be overridden per species or subtype in the reference database manifest (see assets/reference_db/manifest.yml)."
                 }
             }
         },
