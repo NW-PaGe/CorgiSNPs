@@ -19,6 +19,7 @@ process SUMMARYLINE {
     if (denovo)     args << "--denovo \"${denovo}\""
     if (species)    args << "--species \"${species}\""
     if (subtype)    args << "--subtype \"${subtype}\""
+    if (meta.classify_reason) args << "--classify_fail \"${meta.classify_reason}\""
 
     """
     ${tool} \\

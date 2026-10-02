@@ -286,10 +286,14 @@ def perform_auto_qc(
     data: Dict[str, Any],
     min_depth: int,
     min_qual: float,
-    ranges: Dict[str, Dict[str, Any]]
+    ranges: Dict[str, Dict[str, Any]],
+    classify_fail: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Perform automated quality control checks.
+
+    A sample the pipeline could not match to a reference (classify_fail set)
+    always fails, with that reason reported first.
 
     Checks:
     - Species identified
@@ -359,7 +363,11 @@ def perform_auto_qc(
                 qc_error.append(field)
                 logging.error(f"QC comparison failed for {field}: {e}")
 
+    if classify_fail:
+        qc_status = 'FAIL'
+
     qc_reasons = [
+        f"Classification: {classify_fail}" if classify_fail else '',
         f"Undetermined: {', '.join(qc_und)}" if qc_und else '',
         f"Failure: {', '.join(qc_fail)}" if qc_fail else '',
         f"Error: {', '.join(qc_error)}" if qc_error else ''
@@ -381,7 +389,7 @@ def perform_auto_qc(
 
 def main():
     """Main workflow summarization function."""
-    VERSION = "1.3"
+    VERSION = "1.4"
 
     parser = argparse.ArgumentParser(
         description="Summarize outputs from bioinformatics workflows",
@@ -416,6 +424,9 @@ def main():
                         help="Minimum read depth for QC pass")
     parser.add_argument("--min_qual", type=float, default=0.8,
                         help="Minimum Q30 rate for QC pass")
+    parser.add_argument("--classify_fail",
+                        help="Reason the sample could not be matched to a reference; "
+                             "forces qc_status FAIL")
     
     # Logging options
     parser.add_argument("--log-level",
@@ -516,7 +527,7 @@ def main():
     data['qc_range_source'] = describe_sources(ranges)
 
     # Perform automated QC
-    data = perform_auto_qc(data, args.min_depth, args.min_qual, ranges)
+    data = perform_auto_qc(data, args.min_depth, args.min_qual, ranges, args.classify_fail)
 
     # Format output values
     for key, value in list(data.items()):

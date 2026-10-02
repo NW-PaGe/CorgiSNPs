@@ -27,8 +27,11 @@ include { SUBTYPE        } from '../../../modules/local/subtype/main'
        signatures (SUBTYPE).
     6. Each sample is matched to the reference for its species and subtype.
 
-    Any sample that cannot be matched to a reference stops the pipeline, with
-    every such sample and the reason listed in one error.
+    Samples that cannot be matched to a reference (no species-level call, no
+    subtype, or no reference for their species/subtype) do not stop the
+    pipeline. They are listed in one warning and emitted on `unclassified`,
+    with the reason in meta.classify_reason, so they can still be summarized
+    but are kept out of the downstream subworkflows.
 */
 workflow CLASSIFY {
 
@@ -143,26 +146,37 @@ workflow CLASSIFY {
         .set { ch_matched }
 
     // -------------------------------------------------------------------------
-    // Fail the pipeline, listing every sample without a reference and why
+    // Samples without a reference: record why in meta.classify_reason and
+    // emit them separately so they skip VARIANTS / AMR / PHYLO but still get
+    // a summary line. [ meta, reads ]
     // -------------------------------------------------------------------------
     ch_species.no_species
         .map { meta, reads, contigs, refs ->
-            "${meta.id}: GAMBIT did not return a species-level call"
+            [ meta + [ classify_reason: 'GAMBIT did not return a species-level call' ], reads ]
         }
         .mix(
             ch_species.no_reference.map { meta, reads, contigs, refs ->
-                "${meta.id}: no reference for species '${meta.species}'"
+                [ meta + [ classify_reason: "no reference for species '${meta.species}'".toString() ], reads ]
             },
             ch_matched.unmatched.map { meta, reads, refs ->
-                Utils.hasValue(meta.subtype)
-                    ? "${meta.id}: no reference for species '${meta.species}' with subtype '${meta.subtype}'"
-                    : "${meta.id}: subtype could not be determined for species '${meta.species}'"
+                def reason = Utils.hasValue(meta.subtype)
+                    ? "no reference for species '${meta.species}' with subtype '${meta.subtype}'"
+                    : "subtype could not be determined for species '${meta.species}'"
+                [ meta + [ classify_reason: reason.toString() ], reads ]
             }
         )
-        .map { msg -> "  - ${msg}".toString() }
+        .set { ch_unclassified }
+
+    // Warn (once, listing every sample) instead of failing the run
+    ch_unclassified
+        .map { meta, reads -> "  - ${meta.id}: ${meta.classify_reason}".toString() }
         .collect()
-        .map { lines ->
-            error("No matching reference found for ${lines.size()} sample(s):\n" + lines.sort().join('\n'))
+        .subscribe { lines ->
+            log.warn(
+                "No matching reference found for ${lines.size()} sample(s); " +
+                "they will be summarized but excluded from downstream analysis:\n" +
+                lines.sort().join('\n')
+            )
         }
 
     // One item per sample/reference pair: [ meta, reads, ref_meta, reference ]
@@ -173,13 +187,14 @@ workflow CLASSIFY {
         .set { ch_sample_refs }
 
     emit:
-    samplesheet = ch_matched.matched.map { meta, reads, refs -> [ meta, reads ] }  // species / subtype set
-    sample_refs = ch_sample_refs  // [ meta, reads, ref_meta, reference ]
-    denovo      = SHOVILL.out.contigs
-    species     = GAMBIT_QUERY.out.taxa
-    subtype     = SUBTYPE.out.subtype
-    signatures  = SUBTYPE_SKETCH.out.signatures  // [ [id: species_key], sig.zip ]
-    versions    = ch_versions
+    samplesheet  = ch_matched.matched.map { meta, reads, refs -> [ meta, reads ] }  // species / subtype set
+    unclassified = ch_unclassified  // [ meta, reads ]; meta.classify_reason says why
+    sample_refs  = ch_sample_refs  // [ meta, reads, ref_meta, reference ]
+    denovo       = SHOVILL.out.contigs
+    species      = GAMBIT_QUERY.out.taxa
+    subtype      = SUBTYPE.out.subtype
+    signatures   = SUBTYPE_SKETCH.out.signatures  // [ [id: species_key], sig.zip ]
+    versions     = ch_versions
 }
 
 

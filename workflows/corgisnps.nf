@@ -56,6 +56,9 @@ workflow CORGISNPS {
     ch_tree      = ch_blank
     ch_dist      = ch_blank
 
+    // Samples CLASSIFY could not match to a reference (summarized only)
+    ch_unclassified = Channel.empty()
+
     // =========================================================================
     // CLASSIFY (optional) - only samples missing species or subtype
     // =========================================================================
@@ -67,22 +70,25 @@ workflow CORGISNPS {
 
         ch_versions    = ch_versions.mix(CLASSIFY.out.versions)
         ch_samplesheet = CLASSIFY.out.samplesheet.concat(ch_pre_classified)
+        ch_unclassified = CLASSIFY.out.unclassified
         ch_denovo      = CLASSIFY.out.denovo
         ch_species     = CLASSIFY.out.species
         ch_subtype     = CLASSIFY.out.subtype
     }
 
-    // Sanitize species/subtype strings
-    ch_samplesheet = ch_samplesheet.map { meta, reads ->
-        [ meta + [species: Utils.sanitize(meta.species), subtype: Utils.sanitize(meta.subtype)], reads ]
-    }
+    // Sanitize species/subtype strings (unclassified samples may have neither)
+    ch_samplesheet  = ch_samplesheet.map  { meta, reads -> [ sanitizeMeta(meta), reads ] }
+    ch_unclassified = ch_unclassified.map { meta, reads -> [ sanitizeMeta(meta), reads ] }
 
     // =========================================================================
     // SUMMARYLINE - per-sample summary and auto QC
+    // Unclassified samples are summarized too (and always fail QC), but only
+    // ch_samplesheet feeds the downstream subworkflows.
     // Joins keep samples lacking some inputs (remainder: true); missing
     // entries become [] so every tuple has the same shape.
     // =========================================================================
     ch_samples = ch_samplesheet
+        .mix  (ch_unclassified)
         .map  { meta, reads -> [meta.id, meta] }
         .join (ch_read_stats.map { meta, file -> [meta.id, file] }, remainder: true)
         .join (ch_denovo.map     { meta, file -> [meta.id, file] }, remainder: true)
@@ -222,6 +228,24 @@ workflow CORGISNPS {
     emit:
     multiqc_report = MULTIQC.out.report.toList() // path: MultiQC HTML report
     versions       = ch_versions                 // channel: versions.yml files from all stages
+}
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    FUNCTIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+//
+// meta with species / subtype run through Utils.sanitize(). Unset values
+// (null, blank, or nf-schema's empty list) become null, since samples that
+// CLASSIFY could not match may have neither.
+//
+def sanitizeMeta(meta) {
+    return meta + [
+        species: Utils.hasValue(meta.species) ? Utils.sanitize(meta.species.toString()) : null,
+        subtype: Utils.hasValue(meta.subtype) ? Utils.sanitize(meta.subtype.toString()) : null
+    ]
 }
 
 /*
