@@ -64,6 +64,11 @@ workflow PIPELINE_INITIALISATION {
     )
 
     //
+    // Custom validation for pipeline parameters
+    //
+    validateInputParameters()
+
+    //
     // Create channel from input file provided through params.input
     //
 
@@ -139,6 +144,47 @@ workflow PIPELINE_COMPLETION {
     FUNCTIONS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
+
+//
+// Check and validate pipeline parameters
+//
+def validateInputParameters() {
+    // PHYLO and the --push copy both live under variant calling, so neither
+    // touches the database when --variants is false.
+    def needs_db_phylo = params.variants && params.phylo
+    def needs_db_push  = params.variants && params.push
+
+    // PHYLO reads cached consensus sequences from the surveillance database.
+    if (needs_db_phylo && !params.db) {
+        error("ERROR: The phylo workflow is enabled but no database was provided. Supply a database path with '--db <path>', or disable phylogenetics with '--phylo false'.")
+    }
+
+    // VARIANTS copies each consensus sequence into the database when --push is set.
+    if (needs_db_push && !params.db) {
+        error("ERROR: '--push' is enabled but no database was provided. Supply a database path with '--db <path>', or remove '--push'.")
+    }
+
+    // --push only copies consensus sequences built during variant calling.
+    if (params.push && !params.variants) {
+        log.warn "'--push' has no effect when '--variants false' is set; nothing will be pushed to the database."
+    }
+
+    if (params.db) {
+        def db_path = file(params.db)
+        // The database is a directory tree of <species>/<subtype>/<sample> files.
+        if (db_path.exists() && !db_path.isDirectory()) {
+            error("ERROR: The database path '${params.db}' exists but is not a directory.")
+        }
+        // A missing database is allowed (e.g. the first run), but a mistyped
+        // path would otherwise go unnoticed.
+        if (!db_path.exists() && (needs_db_phylo || needs_db_push)) {
+            def effects = []
+            if (needs_db_phylo) { effects << "no previously pushed samples will be included in the phylogenetic analysis" }
+            if (needs_db_push)  { effects << "it will be created when samples are pushed" }
+            log.warn "The database path '${params.db}' does not exist: ${effects.join('; ')}."
+        }
+    }
+}
 
 // Function to prepare the samplesheet
 def create_sample_channel(row) {
