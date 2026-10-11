@@ -27,11 +27,12 @@ include { SUBTYPE        } from '../../../modules/local/subtype/main'
        signatures (SUBTYPE).
     6. Each sample is matched to the reference for its species and subtype.
 
-    Samples that cannot be matched to a reference (no species-level call, no
-    subtype, or no reference for their species/subtype) do not stop the
-    pipeline. They are listed in one warning and emitted on `unclassified`,
-    with the reason in meta.classify_reason, so they can still be summarized
-    but are kept out of the downstream subworkflows.
+    Samples that cannot be matched to a reference (failed SHOVILL assembly,
+    no species-level call, no subtype, or no reference for their
+    species/subtype) do not stop the pipeline. They are listed in one warning
+    and emitted on `unclassified`, with the reason in meta.classify_reason, so
+    they can still be summarized but are kept out of the downstream
+    subworkflows.
 */
 workflow CLASSIFY {
 
@@ -53,9 +54,13 @@ workflow CLASSIFY {
         ch_samplesheet
     )
 
+    // SHOVILL failures are ignored (see conf/modules.config), so a sample can
+    // come out with no contigs. Keep it (remainder: true) and set it aside as
+    // unclassified rather than letting it drop out of the run.
     ch_samplesheet
-        .join(SHOVILL.out.contigs)
+        .join(SHOVILL.out.contigs, remainder: true)
         .branch { meta, reads, contigs ->
+            no_assembly:   !contigs
             has_species:   Utils.hasValue(meta.species)
             needs_species: true
         }
@@ -150,11 +155,14 @@ workflow CLASSIFY {
     // emit them separately so they skip VARIANTS / AMR / PHYLO but still get
     // a summary line. [ meta, reads ]
     // -------------------------------------------------------------------------
-    ch_species.no_species
-        .map { meta, reads, contigs, refs ->
-            [ meta + [ classify_reason: 'GAMBIT did not return a species-level call' ], reads ]
+    ch_assembled.no_assembly
+        .map { meta, reads, contigs ->
+            [ meta + [ classify_reason: 'Shovill de novo assembly failed' ], reads ]
         }
         .mix(
+            ch_species.no_species.map { meta, reads, contigs, refs ->
+                [ meta + [ classify_reason: 'GAMBIT did not return a species-level call' ], reads ]
+            },
             ch_species.no_reference.map { meta, reads, contigs, refs ->
                 [ meta + [ classify_reason: "no reference for species '${meta.species}'".toString() ], reads ]
             },
