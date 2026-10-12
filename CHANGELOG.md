@@ -15,6 +15,8 @@ Initial release of NW-PaGe/corgisnps, created with the [nf-core](https://nf-co.r
 
 ### `Fixed`
 
+- A failed Shovill assembly no longer stops the run or drops the sample. The failure is ignored (after one retry on resource-related exits), and the sample is reported as unclassified with the reason `Shovill de novo assembly failed`, so it still gets a summary line (QC `FAIL`) and is kept out of VARIANTS / AMR / PHYLO.
+
 ### `Dependencies`
 
 ### `Deprecated`
