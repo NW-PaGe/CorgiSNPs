@@ -1,0 +1,8 @@
+name: default
+channels:
+- conda-forge
+- bioconda
+- nodefaults
+dependencies:
+- python ==3.8
+- scipy >=1.10.1,<2
