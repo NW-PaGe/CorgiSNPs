@@ -135,8 +135,12 @@
               coords: [221637, 221663]
             - name: HS2
               coords: [223782, 223805]
+            # HS3: FKS1 codons 686-696, the C. auris equivalent of S. cerevisiae
+            # Fks1 hot spot 3 (residues 690-700; Johnson et al. 2011, AAC
+            # 55:3774). Wider than the MycoSNP/snpeffr default (221805-221807,
+            # W691 only) so that changes such as L686F and M690I/V are reported.
             - name: HS3
-              coords: [221805, 221807]
+              coords: [221790, 221822]
     - subtype: [Clade II]
       assembly: GCF_003013715.1.fna.gz
     - subtype: [Clade III]
